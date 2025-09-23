@@ -1,0 +1,135 @@
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
+import requests
+from auth import verify_token, verify_google_token
+from users import register_client, find_user, update_profile
+from db_init import initialize_database
+from config import AUTH0_DOMAIN
+
+# Initialize FastAPI app
+app = FastAPI(title="Dukbill API", version="1.0.0")
+
+# Allowed CORS origins
+origins = [
+    "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev",
+    "https://api.vericare.com.au",
+    "http://localhost:5000",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize database
+initialize_database()
+
+# Security dependency for extracting Bearer token
+security = HTTPBearer()
+
+# Pydantic model for Google signup
+class GoogleTokenRequest(BaseModel):
+    googleToken: str
+
+# Dependency: Get current user claims from Auth0 token
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    claims = verify_token(token)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return claims, token  # return both claims and raw access token
+
+# Helper to call Auth0 /userinfo endpoint
+def get_user_info_from_auth0(access_token: str):
+    userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
+    response = requests.get(
+        userinfo_url,
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
+    return response.json()
+
+
+@app.post("/api/google-signup")
+async def google_signup(req: GoogleTokenRequest):
+    payload = verify_google_token(req.googleToken)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+    print(payload)
+    return {"success": "User registered successfully"}
+
+@app.post("/auth/client/register")
+async def register(user=Depends(get_current_user)):
+    claims, access_token = user
+    # Fetch full profile from Auth0
+    profile = get_user_info_from_auth0(access_token)
+    auth0_id = profile["sub"]
+    
+    user = find_user(auth0_id)
+    missing_fields = []
+    
+    # handles new user
+    if not user:
+        user_id = register_client(auth0_id, profile["email"], profile["picture"], False)
+        missing_fields = ["name", "company", "phone"]
+        return {
+            "user": user_id,
+            "isNewUser": True,
+            "missingFields": missing_fields,
+            "profileComplete": False
+        }   
+    else:
+    # existing user with complete profile 
+        if user["profile_complete"]:
+            return {
+                "user": user["id"],
+                "isNewUser": False,
+                "missingFields": missing_fields,
+                "profileComplete": user["profile_complete"]
+            } 
+        # existing user with incomplete profile
+        else:
+            fields_to_check = ["name", "company", "phone"]
+            
+            for field in fields_to_check:
+                if user.get(field) is None: 
+                    missing_fields.append(field)
+
+            return {
+                "user": user["id"],
+                "isNewUser": False,
+                "missingFields": missing_fields,
+                "profileComplete": user["profile_complete"]
+            }
+
+@app.patch("/users/onboarding")
+async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
+    claims, access_token = user
+    profile = get_user_info_from_auth0(access_token)
+    
+    auth0_id = profile["sub"]
+    user_obj = update_profile(auth0_id, profile_data)
+    return {
+        "user": user_obj["id"],
+        "profileComplete": user_obj["profile_complete"],
+        "missingFields": [
+            field for field in ["full_name", "phone_number", "company_name"]
+            if not user_obj.get(field)
+        ]
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "dukbill"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
