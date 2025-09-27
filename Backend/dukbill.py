@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import requests
 from auth import verify_token, verify_google_token
-from users import register_client, find_user, update_profile
+from users import register_user, find_user, update_profile, register_broker, register_client
 from db_init import initialize_database
 from config import AUTH0_DOMAIN
 
@@ -77,7 +77,7 @@ async def register(user=Depends(get_current_user)):
     
     # handles new user
     if not user:
-        user_id = register_client(auth0_id, profile["email"], profile["picture"], False)
+        user_id = register_user(auth0_id, profile["email"], profile["picture"], False)
         missing_fields = ["name", "company", "phone"]
         return {
             "user": user_id,
@@ -89,7 +89,7 @@ async def register(user=Depends(get_current_user)):
     # existing user with complete profile 
         if user["profile_complete"]:
             return {
-                "user": user["id"],
+                "user": user["user_id"],
                 "isNewUser": False,
                 "missingFields": missing_fields,
                 "profileComplete": user["profile_complete"]
@@ -103,7 +103,7 @@ async def register(user=Depends(get_current_user)):
                     missing_fields.append(field)
 
             return {
-                "user": user["id"],
+                "user": user["user_id"],
                 "isNewUser": False,
                 "missingFields": missing_fields,
                 "profileComplete": user["profile_complete"]
@@ -114,15 +114,28 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
     
+    print(profile_data)
+    
     auth0_id = profile["sub"]
+    user_type = profile_data["user_type"]
+    broker_id = profile_data.pop("broker_id", None)
     user_obj = update_profile(auth0_id, profile_data)
+    validatedBroker = False
+
+    if user_type == 'client':
+        validatedBroker = bool(register_client(user_obj["user_id"], broker_id))
+    elif user_type == "broker":
+        register_broker(user_obj["user_id"])
+        validatedBroker = True
+
     return {
-        "user": user_obj["id"],
+        "user": user_obj["user_id"],
         "profileComplete": user_obj["profile_complete"],
         "missingFields": [
             field for field in ["full_name", "phone_number", "company_name"]
             if not user_obj.get(field)
-        ]
+        ],
+        "validatedBroker": validatedBroker,
     }
 
 
