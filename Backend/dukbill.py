@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import requests
 from auth import verify_token, verify_google_token
-from users import register_user, find_user, update_profile, register_broker, register_client
+from users import *
 from db_init import initialize_database
 from config import AUTH0_DOMAIN
 
@@ -138,6 +138,29 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
         "validatedBroker": validatedBroker,
     }
 
+@app.get("/user/profile")
+async def fetch_user_profile(user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    
+    user_obj = find_user(auth0_id) 
+    print(user_obj)
+    
+     
+    
+    if user_obj["isBroker"]:
+        profile = find_broker(user_obj["user_id"])
+        profile_id = profile["broker_id"]
+    else:
+        profile = find_client(user_obj["user_id"])
+        profile_id = profile["client_id"]
+
+    return {
+        "name": user_obj["name"],
+        "id": profile_id,
+        "picture": user_obj["picture"]
+    }
+      
 
 @app.get("/health")
 async def health_check():

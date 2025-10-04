@@ -4,6 +4,14 @@ def find_user(auth0_id):
     user = search_user_by_auth0(auth0_id)
     return user
 
+def find_client(user_id):
+    client = retrieve_client(user_id)
+    return client
+
+def find_broker(user_id):
+    broker = retrieve_broker(user_id)
+    return broker
+
 def verify_user(user_id):
     return verify_user_by_id(user_id)
 

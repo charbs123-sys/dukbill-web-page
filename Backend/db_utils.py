@@ -14,6 +14,23 @@ def search_user_by_auth0(auth0_id):
     conn.close()
     return result
 
+def retrieve_broker(user_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM brokers WHERE user_id = %s", (user_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
+
+def retrieve_client(user_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM clients WHERE user_id = %s", (user_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
 
 def generate_id(length=6):
     # Generates a numeric string, e.g., "348291"
