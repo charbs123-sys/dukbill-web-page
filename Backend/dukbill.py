@@ -7,6 +7,7 @@ from auth import verify_token, verify_google_token
 from users import *
 from db_init import initialize_database
 from config import AUTH0_DOMAIN
+from S3_utils import *
 
 # Initialize FastAPI app
 app = FastAPI(title="Dukbill API", version="1.0.0")
@@ -144,23 +145,58 @@ async def fetch_user_profile(user=Depends(get_current_user)):
     auth0_id = claims["sub"]
     
     user_obj = find_user(auth0_id) 
-    print(user_obj)
-    
-     
-    
+   
     if user_obj["isBroker"]:
         profile = find_broker(user_obj["user_id"])
         profile_id = profile["broker_id"]
+        user_type = "broker"
     else:
         profile = find_client(user_obj["user_id"])
         profile_id = profile["client_id"]
+        user_type = "client"
 
     return {
         "name": user_obj["name"],
         "id": profile_id,
-        "picture": user_obj["picture"]
+        "picture": user_obj["picture"],
+        "user_type": user_type
     }
-      
+
+@app.get("/brokers/client/list")
+async def get_client_list(user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    
+    user = find_user(auth0_id)
+    broker = find_broker(user["user_id"])
+    clients = get_broker_clients(broker["broker_id"])
+
+    return {"clients": clients}
+
+
+@app.get("/S3/check")
+async def s3_check(key):
+    document_types = get_json_file(key)
+    return {"documentTypes": document_types}
+
+@app.get("/S3/pdf/check")
+async def get_pdf_from_s3(key: str):
+    """Retrieve and stream a PDF file directly from S3."""
+    try:
+        s3_object = s3.get_object(Bucket=bucket_name, Key=key)
+        pdf_data = s3_object["Body"].read()
+        return StreamingResponse(
+            io.BytesIO(pdf_data),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename={key.split('/')[-1]}"
+            }
+        )
+    except s3.exceptions.NoSuchKey:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except Exception as e:
+        print(f"[S3 PDF RETRIEVE ERROR] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():

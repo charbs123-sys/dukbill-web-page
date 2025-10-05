@@ -154,11 +154,31 @@ def update_user_profile(auth0_id: str, profile_data: dict):
         cursor.execute(sql, (auth0_id,))
     else:
         fields.append("profile_complete = TRUE")
-        values.append(auth0_id)  # for WHERE clause
+        values.append(auth0_id)
         sql = f"UPDATE users SET {', '.join(fields)} WHERE auth0_id=%s"
         cursor.execute(sql, values)
 
     conn.commit()
     cursor.close()
     conn.close()
+    
+def get_clients_for_broker(broker_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query = """
+    SELECT 
+        c.client_id AS id,
+        u.name,
+        u.picture
+    FROM clients c
+    JOIN users u ON c.user_id = u.user_id
+    WHERE c.broker_id = %s;
+    """
+    cursor.execute(query, (broker_id,))
+    clients = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+    return clients
 

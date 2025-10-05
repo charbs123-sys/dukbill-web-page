@@ -38,3 +38,7 @@ def register_client(user_id, broker_id):
 def register_broker(user_id):
     if verify_user(user_id):
         return add_broker(user_id)
+    
+def get_broker_clients(broker_id):
+    if verify_broker(broker_id):
+        return get_clients_for_broker(broker_id)
