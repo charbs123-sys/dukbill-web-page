@@ -181,33 +181,19 @@ async def get_client_documents(user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
 
-    return get_client_dashboard(client["client_id"], user["email"])
+    return get_client_dashboard(client["client_id"], "georgegnncopy@gmail.com")
 
-
-@app.get("/S3/check")
-async def s3_check(key):
-    document_types = get_json_file(key)
-    return {"documentTypes": document_types}
-
-@app.get("/S3/pdf/check")
-async def get_pdf_from_s3(key: str):
-    """Retrieve and stream a PDF file directly from S3."""
-    try:
-        s3_object = s3.get_object(Bucket=bucket_name, Key=key)
-        pdf_data = s3_object["Body"].read()
-        return StreamingResponse(
-            io.BytesIO(pdf_data),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"inline; filename={key.split('/')[-1]}"
-            }
-        )
-    except s3.exceptions.NoSuchKey:
-        raise HTTPException(status_code=404, detail="PDF not found")
-    except Exception as e:
-        print(f"[S3 PDF RETRIEVE ERROR] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+@app.post("/clients/category/documents")
+async def get_category_documents(request: dict, user=Depends(get_current_user)):  
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    
+    category = request.get("category")
+    user = find_user(auth0_id)
+    client = find_client(user["user_id"])
+    
+    return get_client_category_documents(client["client_id"], "georgegnncopy@gmail.com", category)
+    
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}

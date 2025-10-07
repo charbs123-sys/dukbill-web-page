@@ -66,5 +66,5 @@ DOCUMENT_CATEGORIES = [
     'Guarantor Documents',
     'Superannuation Statement',
     'Utility Bills',
-    'Miscellaneous or Unclassified'
+    # 'Miscellaneous or Unclassified'
 ]

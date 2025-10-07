@@ -84,3 +84,45 @@ def get_client_dashboard(client_id, email):
         "categories": categories,
         "missing_categories": filtered_missing,
     }
+
+def get_client_category_documents(client_id, email, category):
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+    
+    documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+    filtered_docs = []
+
+    hashed_email = hash_email(email)
+    prefix = f"{hashed_email}/categorised/{category}/pdfs/"
+    
+    s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    files = s3_objects.get("Contents", [])
+
+    threadid_to_key = {}
+    for obj in files:
+        key = obj["Key"]
+        filename = key.split("/")[-1]
+        for doc in documents:
+            doc_threadid = doc.get("threadid")
+            if doc_threadid and doc_threadid in filename:
+                threadid_to_key[doc_threadid] = key
+
+    for doc in documents:
+        if doc.get("broker_document_category", "Uncategorized") != category:
+            continue
+
+        threadid = doc.get("threadid")
+        pdf_key = threadid_to_key.get(threadid)
+        if not pdf_key:
+            continue 
+
+        url = get_presigned_url(pdf_key)
+
+        filtered_docs.append({
+            "category": category,
+            "company": doc.get("company", "Unknown"),
+            "amount": parse_amount(doc.get("amount")),
+            "due_date": normalize_date(doc.get("date")),
+            "url": url
+        })
+    return filtered_docs
