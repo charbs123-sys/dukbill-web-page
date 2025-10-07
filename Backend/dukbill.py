@@ -181,7 +181,7 @@ async def get_client_documents(user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
 
-    return get_client_dashboard(client["client_id"], "georgegnncopy@gmail.com")
+    return get_client_dashboard(client["client_id"], user["email"])
 
 @app.post("/clients/category/documents")
 async def get_category_documents(request: dict, user=Depends(get_current_user)):  
@@ -192,7 +192,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
     
-    return get_client_category_documents(client["client_id"], "georgegnncopy@gmail.com", category)
+    return get_client_category_documents(client["client_id"], user["email"], category)
     
 @app.get("/health")
 async def health_check():
