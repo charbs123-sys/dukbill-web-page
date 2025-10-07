@@ -1,0 +1,69 @@
+
+import io
+import json
+import hashlib
+import gzip
+import base64
+from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
+from botocore.exceptions import ClientError
+from S3_init import s3, bucket_name
+
+def hash_email(email):
+    return hashlib.sha256(email.encode('utf-8')).hexdigest()
+
+def list_files(prefix: str = ""):
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    if "Contents" not in response:
+        return []
+    return [obj["Key"] for obj in response["Contents"]]
+
+def get_pdf_file(key: str):
+    """
+    Retrieve a PDF from S3 and return it as a StreamingResponse.
+    """
+    try:
+        # Get file from S3
+        s3_object = s3.get_object(Bucket=bucket_name, Key=key)
+        file_bytes = s3_object["Body"].read()
+
+        # Stream PDF response
+        pdf_stream = io.BytesIO(file_bytes)
+        filename = key.split("/")[-1]
+
+        return StreamingResponse(
+            pdf_stream,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"'
+            }
+        )
+
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            raise HTTPException(status_code=404, detail=f"PDF '{key}' not found in S3")
+        raise HTTPException(status_code=500, detail=f"S3 error retrieving '{key}': {e}")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {e}")
+
+
+def get_json_file(email, endpoint):
+    key = hash_email(email) + endpoint
+    try:
+        s3_object = s3.get_object(Bucket=bucket_name, Key=key)
+        compressed_data = s3_object["Body"].read()
+
+        decompressed_data = gzip.decompress(compressed_data)
+
+        content = decompressed_data.decode("utf-8-sig")
+        return json.loads(content)
+
+    except s3.exceptions.NoSuchKey:
+        raise HTTPException(status_code=404, detail=f"File '{key}' not found in S3")
+    except gzip.BadGzipFile:
+        raise HTTPException(status_code=500, detail=f"File '{key}' is not valid gzip data")
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"File '{key}' is not valid JSON: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error reading '{key}': {e}")
