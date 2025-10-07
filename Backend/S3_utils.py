@@ -48,9 +48,8 @@ def get_pdf_file(key: str):
         raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {e}")
 
 
-
-
-def get_json_file(key: str):
+def get_json_file(email, endpoint):
+    key = hash_email(email) + endpoint
     try:
         s3_object = s3.get_object(Bucket=bucket_name, Key=key)
         compressed_data = s3_object["Body"].read()

@@ -87,6 +87,15 @@ def verify_broker_by_id(broker_id):
     conn.close()
     return result
 
+def verify_client_by_id(client_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM clients WHERE client_id = %s", (client_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
+
 def add_user(auth0_id, email, picture, profileComplete=False):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)

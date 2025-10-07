@@ -173,6 +173,16 @@ async def get_client_list(user=Depends(get_current_user)):
 
     return {"clients": clients}
 
+@app.get("/clients/dashboard")
+async def get_client_documents(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    user = find_user(auth0_id)
+    client = find_client(user["user_id"])
+
+    return get_client_dashboard(client["client_id"], "georgegnncopy@gmail.com")
+
 
 @app.get("/S3/check")
 async def s3_check(key):
