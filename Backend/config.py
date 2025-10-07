@@ -23,48 +23,49 @@ S3_CONFIG = {
     "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME")
 }
 
-DOCUMENT_CATEGORIES = [
-    # Income & Employment Documents
-    'Payslips',
-    'PAYG Summary',
-    'Tax Return',
-    'Notice of Assessment',
-    'Employment Contract',
-    'Employment Letter',
-
-    # Bank & Financial Documents
-    'Bank Statements',
-    'Credit Card Statements',
-    'Loan Statements',
-    'ATO Debt Statement',
-    'HECS/HELP Debt',
-
-    # ID & Verification Documents
-    'Driver’s Licence',
-    'Passport',
-    'Medicare Card',
-    'Birth Certificate',
-    'Citizenship Certificate',
-    'VOI Certificate',
-
-    # Property-Related Documents
-    'Contract of Sale',
-    'Building Contract',
-    'Plans and Specifications',
-    'Council Approval',
-    'Deposit Receipt',
-    'Transfer Document',
-    'Valuation Report',
-    'Insurance Certificate',
-    'Rates Notice',
-    'Rental Appraisal',
-    'Tenancy Agreement',
-    'Rental Statement',
-
-    # Other Supporting Documents
-    'Gift Letter',
-    'Guarantor Documents',
-    'Superannuation Statement',
-    'Utility Bills',
-    # 'Miscellaneous or Unclassified'
-]
+DOCUMENT_CATEGORIES = {
+    "Income & Employment Documents": [
+        "Payslips",
+        "PAYG Summary",
+        "Tax Return",
+        "Notice of Assessment",
+        "Employment Contract",
+        "Employment Letter"
+    ],
+    "Bank & Financial Documents": [
+        "Bank Statements",
+        "Credit Card Statements",
+        "Loan Statements",
+        "ATO Debt Statement",
+        "HECS/HELP Debt"
+    ],
+    "ID & Verification Documents": [
+        "Driver’s Licence",
+        "Passport",
+        "Medicare Card",
+        "Birth Certificate",
+        "Citizenship Certificate",
+        "VOI Certificate"
+    ],
+    "Property-Related Documents": [
+        "Contract of Sale",
+        "Building Contract",
+        "Plans and Specifications",
+        "Council Approval",
+        "Deposit Receipt",
+        "Transfer Document",
+        "Valuation Report",
+        "Insurance Certificate",
+        "Rates Notice",
+        "Rental Appraisal",
+        "Tenancy Agreement",
+        "Rental Statement"
+    ],
+    "Other Supporting Documents": [
+        "Gift Letter",
+        "Guarantor Documents",
+        "Superannuation Statement",
+        "Utility Bills"
+        # 'Miscellaneous or Unclassified'
+    ]
+}

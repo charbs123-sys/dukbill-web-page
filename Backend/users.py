@@ -55,35 +55,38 @@ def get_client_dashboard(client_id, email):
         raise HTTPException(status_code=403, detail="Invalid client")
 
     documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
-    missing_categories = list(get_json_file(email, "/pending_categories.json"))
+    missing_categories = set(get_json_file(email, "/pending_categories.json"))
 
     categories_map = {}
     for doc in documents:
         category = doc.get("broker_document_category", "Uncategorized")
-        if category not in categories_map:
-            categories_map[category] = []
+        for heading, cat_list in DOCUMENT_CATEGORIES.items():
+            if category in cat_list:
+                categories_map.setdefault(category, []).append({
+                    "id": str(uuid.uuid4()),
+                    "company_name": doc.get("company", "Unknown"),
+                    "payment_amount": parse_amount(doc.get("amount")),
+                    "due_date": normalize_date(doc.get("date")),
+                })
+                break
 
-        categories_map[category].append({
-            "id": str(uuid.uuid4()),
-            "company_name": doc.get("company", "Unknown"),
-            "payment_amount": parse_amount(doc.get("amount")),
-            "due_date": normalize_date(doc.get("date")),
+    # Build headings structure automatically
+    headings = []
+    for heading, cat_list in DOCUMENT_CATEGORIES.items():
+        categories = [
+            {"category_name": cat, "cards": categories_map.get(cat, [])}
+            for cat in cat_list
+            if cat in categories_map
+        ]
+        missing = [cat for cat in cat_list if cat in missing_categories]
+        headings.append({
+            "heading": heading,
+            "categories": categories,
+            "missing_categories": missing
         })
 
-    categories = [
-        {"category_name": cat, "cards": cards}
-        for cat, cards in categories_map.items()
-        if cat in DOCUMENT_CATEGORIES
-    ]
+    return {"headings": headings}
 
-    filtered_missing = [
-        c for c in DOCUMENT_CATEGORIES if c in missing_categories
-    ]
-
-    return {
-        "categories": categories,
-        "missing_categories": filtered_missing,
-    }
 
 def get_client_category_documents(client_id, email, category):
     if not verify_client_by_id(client_id):
