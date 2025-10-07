@@ -181,7 +181,7 @@ async def get_client_documents(user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
 
-    return get_client_dashboard(client["client_id"], "georgegnncopy@gmail.com")
+    return get_client_dashboard(client["client_id"], user["email"])
 
 
 @app.get("/S3/check")
