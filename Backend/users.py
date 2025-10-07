@@ -1,8 +1,8 @@
 from db_utils import *
 from S3_utils import *
-import uuid
-from datetime import datetime
+from helper import *
 from config import DOCUMENT_CATEGORIES
+import uuid
 
 def find_user(auth0_id):
     user = search_user_by_auth0(auth0_id)
@@ -50,22 +50,6 @@ def get_broker_clients(broker_id):
     if verify_broker(broker_id):
         return get_clients_for_broker(broker_id)
 
-def normalize_date(date_str):
-    """Convert dates to ISO format (YYYY-MM-DD)."""
-    if not date_str:
-        return None
-    try:
-        # Try to parse multiple common formats
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"):
-            try:
-                return datetime.strptime(date_str, fmt).date().isoformat()
-            except ValueError:
-                continue
-        return None  # Unrecognized format
-    except Exception:
-        return None
-
-
 def get_client_dashboard(client_id, email):
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -73,8 +57,6 @@ def get_client_dashboard(client_id, email):
     documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
     missing_categories = list(get_json_file(email, "/pending_categories.json"))
 
-    # Helper: normalize date formats to ISO (YYYY-MM-DD)
-    # Group documents by category
     categories_map = {}
     for doc in documents:
         category = doc.get("broker_document_category", "Uncategorized")
@@ -88,14 +70,12 @@ def get_client_dashboard(client_id, email):
             "due_date": normalize_date(doc.get("date")),
         })
 
-    # Build the structured response
     categories = [
         {"category_name": cat, "cards": cards}
         for cat, cards in categories_map.items()
         if cat in DOCUMENT_CATEGORIES
     ]
 
-    # Filter missing categories so they match config
     filtered_missing = [
         c for c in DOCUMENT_CATEGORIES if c in missing_categories
     ]
@@ -104,14 +84,3 @@ def get_client_dashboard(client_id, email):
         "categories": categories,
         "missing_categories": filtered_missing,
     }
-
-
-def parse_amount(amount_str):
-    """Convert '$1,234.56' → 1234.56 (float)."""
-    if not amount_str:
-        return 0.0
-    try:
-        cleaned = amount_str.replace("$", "").replace(",", "")
-        return float(cleaned)
-    except ValueError:
-        return 0.0
