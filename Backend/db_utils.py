@@ -179,7 +179,8 @@ def get_clients_for_broker(broker_id):
     SELECT 
         c.client_id AS id,
         u.name,
-        u.picture
+        u.picture,
+        c.brokerAccess
     FROM clients c
     JOIN users u ON c.user_id = u.user_id
     WHERE c.broker_id = %s;
@@ -190,6 +191,7 @@ def get_clients_for_broker(broker_id):
     cursor.close()
     conn.close()
     return clients
+
 
 def toggle_broker_access_db(client_id):
     conn = get_connection()
