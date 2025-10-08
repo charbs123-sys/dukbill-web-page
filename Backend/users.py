@@ -41,7 +41,9 @@ def update_profile(auth0_id: str, profile_data: dict):
 def register_client(user_id, broker_id):
     if verify_user(user_id) and verify_broker(broker_id):
         return add_client(user_id, broker_id)
-        
+    else:
+        raise HTTPException(status_code=403, detail="Invalid Broker ID")
+
 def register_broker(user_id):
     if verify_user(user_id):
         return add_broker(user_id)

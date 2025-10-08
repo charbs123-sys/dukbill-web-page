@@ -22,6 +22,7 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS brokers (
             broker_id CHAR(6) PRIMARY KEY,
             user_id INT NOT NULL,
+            brokerAccess BOOLEAN NOT NULL DEFAULT FALSE,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     """)
@@ -29,16 +30,6 @@ def initialize_database():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             client_id CHAR(6) PRIMARY KEY,
-            user_id INT NOT NULL,
-            broker_id CHAR(6) NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(user_id),
-            FOREIGN KEY (broker_id) REFERENCES brokers(broker_id)
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS documents (
-            document_id CHAR(6) PRIMARY KEY,
             user_id INT NOT NULL,
             broker_id CHAR(6) NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(user_id),
