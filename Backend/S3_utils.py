@@ -67,3 +67,22 @@ def get_json_file(email, endpoint):
         raise HTTPException(status_code=500, detail=f"File '{key}' is not valid JSON: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error reading '{key}': {e}")
+
+def get_presigned_url(key: str, expires_in: int = 300) -> str:
+    try:
+        url = s3.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket_name, "Key": key},
+            ExpiresIn=expires_in
+        )
+        return url
+
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "NoSuchKey":
+            raise HTTPException(status_code=404, detail=f"File '{key}' not found in S3")
+        raise HTTPException(status_code=500, detail=f"S3 error generating presigned URL for '{key}': {e}")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error generating presigned URL for '{key}': {e}")
+    
