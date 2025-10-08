@@ -175,13 +175,27 @@ async def get_client_list(user=Depends(get_current_user)):
 
 @app.get("/clients/dashboard")
 async def get_client_documents(user=Depends(get_current_user)):
-    claims, _ = user
+    claims, access_token = user
     auth0_id = claims["sub"]
 
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
 
-    return get_client_dashboard(client["client_id"], user["email"])
+    headings = get_client_dashboard(client["client_id"], "cb092773.badr12345@gmail.com")
+    
+    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
+
+@app.post("/broker/access")
+async def toggle_broker_access_route(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    
+    user = find_user(auth0_id)
+    client = find_client(user["user_id"])
+    
+    toggle_broker_access(client["client_id"])
+    return {"BrokerAccess": not client["brokerAccess"]}
+
 
 @app.post("/clients/category/documents")
 async def get_category_documents(request: dict, user=Depends(get_current_user)):  
@@ -192,7 +206,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
     
-    return get_client_category_documents(client["client_id"], user["email"], category)
+    return get_client_category_documents(client["client_id"], "cb092773.badr12345@gmail.com", category)
     
 @app.get("/health")
 async def health_check():

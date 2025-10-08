@@ -191,3 +191,13 @@ def get_clients_for_broker(broker_id):
     conn.close()
     return clients
 
+def toggle_broker_access_db(client_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE clients SET brokerAccess = NOT brokerAccess WHERE client_id = %s",
+        (client_id,)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()

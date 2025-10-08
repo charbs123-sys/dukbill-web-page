@@ -52,6 +52,13 @@ def get_broker_clients(broker_id):
     if verify_broker(broker_id):
         return get_clients_for_broker(broker_id)
 
+def toggle_broker_access(client_id):
+    if not verify_client(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+
+    toggle_broker_access_db(client_id)
+
+
 def get_client_dashboard(client_id, email):
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -72,7 +79,6 @@ def get_client_dashboard(client_id, email):
                 })
                 break
 
-    # Build headings structure automatically
     headings = []
     for heading, cat_list in DOCUMENT_CATEGORIES.items():
         categories = [
@@ -87,7 +93,7 @@ def get_client_dashboard(client_id, email):
             "missing_categories": missing
         })
 
-    return {"headings": headings}
+    return headings
 
 
 def get_client_category_documents(client_id, email, category):
