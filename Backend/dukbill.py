@@ -181,7 +181,7 @@ async def get_client_documents(user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
 
-    headings = get_client_dashboard(client["client_id"], "cb092773.badr12345@gmail.com")
+    headings = get_client_dashboard(client["client_id"], user["email"])
     
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
@@ -206,8 +206,30 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
     
-    return get_client_category_documents(client["client_id"], "cb092773.badr12345@gmail.com", category)
+    return get_client_category_documents(client["client_id"], user["email"], category)
+
+@app.get("/brokers/client/{client_id}/dashboard")
+async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    client = verify_client(client_id)
+    client_email = get_user_from_client(client_id)
+    headings = get_client_dashboard(client_id, client_email)
+
+    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
+
+@app.post("/brokers/client/{client_id}/category/documents")
+async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):  
+    claims, access_token = user
+    auth0_id = claims["sub"]
     
+    category = request.get("category")
+    client = verify_client(client_id)
+    client_email = get_user_from_client(client_id)
+    
+    return get_client_category_documents(client_id, client_email, category)
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}

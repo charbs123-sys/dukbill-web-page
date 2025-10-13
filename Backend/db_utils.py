@@ -32,6 +32,29 @@ def retrieve_client(user_id):
     conn.close()
     return result
 
+from db_utils import get_connection
+
+def get_user_email_by_client_id(client_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    query = """
+        SELECT u.email
+        FROM clients c
+        JOIN users u ON c.user_id = u.user_id
+        WHERE c.client_id = %s;
+    """
+    
+    cursor.execute(query, (client_id,))
+    result = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+    
+    return result[0] if result else None
+
+
+
 def generate_id(length=6):
     # Generates a numeric string, e.g., "348291"
     return ''.join(random.choices("0123456789", k=length))
@@ -115,8 +138,8 @@ def add_broker(user_id):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
-        "INSERT INTO brokers (user_id) VALUES (%s)",
-        (broker_id, user_id,)
+        "INSERT INTO brokers (broker_id, user_id) VALUES (%s, %s)",
+        (broker_id, user_id)
     )
     conn.commit()
     cursor.close()
@@ -179,7 +202,8 @@ def get_clients_for_broker(broker_id):
     SELECT 
         c.client_id AS id,
         u.name,
-        u.picture
+        u.picture,
+        c.brokerAccess
     FROM clients c
     JOIN users u ON c.user_id = u.user_id
     WHERE c.broker_id = %s;
@@ -190,6 +214,7 @@ def get_clients_for_broker(broker_id):
     cursor.close()
     conn.close()
     return clients
+
 
 def toggle_broker_access_db(client_id):
     conn = get_connection()

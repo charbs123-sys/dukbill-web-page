@@ -25,6 +25,9 @@ def verify_broker(broker_id):
 def verify_client(client_id):
     return verify_client_by_id(client_id)
 
+def get_user_from_client(client_id):
+    return get_user_email_by_client_id(client_id)
+
 def register_user(auth0_id, email, picture, profileComplete):
     user_id = add_user(auth0_id, email, picture, profileComplete)
     return user_id
