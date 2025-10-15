@@ -6,8 +6,9 @@ import requests
 from auth import verify_token, verify_google_token
 from users import *
 from db_init import initialize_database
-from config import AUTH0_DOMAIN
+from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
+from fastapi.responses import RedirectResponse
 
 # Initialize FastAPI app
 app = FastAPI(title="Dukbill API", version="1.0.0")
@@ -56,7 +57,6 @@ def get_user_info_from_auth0(access_token: str):
     if response.status_code != 200:
         raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
     return response.json()
-
 
 @app.post("/api/google-signup")
 async def google_signup(req: GoogleTokenRequest):
@@ -109,6 +109,19 @@ async def register(user=Depends(get_current_user)):
                 "missingFields": missing_fields,
                 "profileComplete": user["profile_complete"]
             }
+
+# Full Auth0 logout
+@app.get("/auth/logout")
+async def logout():
+    # Ensure your AUTH0_DOMAIN is full domain with region, e.g. dev-fg1hwnn3wmqamynb.au.auth0.com
+    logout_url = (
+        f"https://{AUTH0_DOMAIN}/v2/logout?"
+        f"federated&"  # clears social provider sessions too
+        f"client_id={AUTH0_CLIENT_ID}&"
+        f"returnTo={POST_LOGOUT_REDIRECT_URI}"
+    )
+    return RedirectResponse(url=logout_url)
+
 
 @app.patch("/users/onboarding")
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
