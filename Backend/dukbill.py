@@ -2,16 +2,18 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-import requests
+from basiq_api import BasiqAPI
 from auth import verify_token, verify_google_token
 from users import *
 from db_init import initialize_database
 from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
 from fastapi.responses import RedirectResponse
+import requests
 
 # Initialize FastAPI app
 app = FastAPI(title="Dukbill API", version="1.0.0")
+basiq = BasiqAPI()
 
 # Allowed CORS origins
 origins = [
@@ -63,7 +65,6 @@ async def google_signup(req: GoogleTokenRequest):
     payload = verify_google_token(req.googleToken)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid Google token")
-    print(payload)
     return {"success": "User registered successfully"}
 
 @app.post("/auth/client/register")
@@ -113,23 +114,19 @@ async def register(user=Depends(get_current_user)):
 # Full Auth0 logout
 @app.get("/auth/logout")
 async def logout():
-    # Ensure your AUTH0_DOMAIN is full domain with region, e.g. dev-fg1hwnn3wmqamynb.au.auth0.com
     logout_url = (
         f"https://{AUTH0_DOMAIN}/v2/logout?"
-        f"federated&"  # clears social provider sessions too
         f"client_id={AUTH0_CLIENT_ID}&"
-        f"returnTo={POST_LOGOUT_REDIRECT_URI}"
+        f"returnTo={POST_LOGOUT_REDIRECT_URI}&"
+        f"federated"
     )
     return RedirectResponse(url=logout_url)
-
 
 @app.patch("/users/onboarding")
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
-    
-    print(profile_data)
-    
+       
     auth0_id = profile["sub"]
     user_type = profile_data["user_type"]
     broker_id = profile_data.pop("broker_id", None)
@@ -236,12 +233,71 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
 async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):  
     claims, access_token = user
     auth0_id = claims["sub"]
-    
-    category = request.get("category")
+
     client = verify_client(client_id)
-    client_email = get_user_from_client(client_id)
+    if not client["brokerAccess"]:
+        return {"error": "Access denied"}
+
+    category = request.get("category")
+    client = get_user_from_client(client_id)
     
-    return get_client_category_documents(client_id, client_email, category)
+    return get_client_category_documents(client_id, client["email"], category)
+
+@app.get("/basiq/connect")
+async def connect_bank(user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+
+    user = find_user(auth0_id)
+    if not user["basiq_id"]:
+        basiq_user = basiq.create_user(user["email"], user["phone"])
+        add_basiq_id(user["user_id"], basiq_user["id"])
+        user = find_user(auth0_id)
+        
+    client_token = basiq.get_client_access_token(user["basiq_id"])
+    consent_url = f"https://consent.basiq.io/home?token={client_token}"
+    print(consent_url)
+    return RedirectResponse(consent_url)
+
+@app.get("/clients/bank/transactions")
+async def get_client_bank_transactions(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    user = find_user(auth0_id)
+    basiq_id = user.get("basiq_id")
+    if not basiq_id:
+        return {"transactions": []}
+
+    connections_resp = basiq.get_user_connections(basiq_id)
+    connections = connections_resp.get("data", [])
+    if not connections:
+        return {"transactions": []}
+
+    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
+    return {"transactions": transactions}
+
+
+@app.get("/brokers/client/{client_id}/bank/transactions")
+async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
+    claims, _ = user
+
+    client = verify_client(client_id)
+    if not client.get("brokerAccess"):
+        return {"error": "Access denied"}
+
+    user_client = get_user_from_client(client_id)
+    basiq_id = user_client.get("basiq_id")
+    if not basiq_id:
+        return {"transactions": []}
+
+    connections_resp = basiq.get_user_connections(basiq_id)
+    connections = connections_resp.get("data", [])
+    if not connections:
+        return {"transactions": []}
+
+    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
+    return {"transactions": transactions}
 
 @app.get("/health")
 async def health_check():

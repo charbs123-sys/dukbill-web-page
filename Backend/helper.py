@@ -1,4 +1,5 @@
 from datetime import datetime
+import phonenumbers
 
 def parse_amount(amount_str):
     if not amount_str:
@@ -21,3 +22,8 @@ def normalize_date(date_str):
         return None
     except Exception:
         return None
+
+def format_phonenumber(phonenumber):
+    parsed_number = phonenumbers.parse(phonenumber, "AU")
+    formatted_number = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+    return formatted_number
