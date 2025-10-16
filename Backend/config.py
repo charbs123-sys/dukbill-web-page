@@ -32,6 +32,13 @@ S3_CONFIG = {
 BASIQ_API_KEY = os.getenv("BASIQ_API_KEY")
 BASIQ_BASE_URL = os.getenv("BASIQ_BASE_URL")
 
+# Gmail Connection
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8765/callback")
+SCOPE = os.getenv("SCOPE", "https://www.googleapis.com/auth/gmail.readonly")
+SEARCH_QUERY = os.getenv("SEARCH_QUERY", "has:attachment newer_than:2y")
+
 
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [

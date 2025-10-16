@@ -15,7 +15,8 @@ def initialize_database():
             company VARCHAR(255),
             picture VARCHAR(255),
             isBroker BOOLEAN NOT NULL DEFAULT FALSE,
-            profile_complete BOOLEAN NOT NULL DEFAULT FALSE
+            profile_complete BOOLEAN NOT NULL DEFAULT FALSE,
+            email_scan BOOLEAN NOT NULL DEFAULT FALSE
         )
     """)
 
