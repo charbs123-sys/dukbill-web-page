@@ -233,6 +233,18 @@ def toggle_broker_access_db(client_id):
     cursor.close()
     conn.close()
 
+def toggle_email_Scan_db(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET email_scan = NOT email_Scan WHERE user_id = %s",
+        (user_id,)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+   
+    
 def add_basiq_id_db(user_id, basiq_id):
     conn = get_connection()
     cursor = conn.cursor()

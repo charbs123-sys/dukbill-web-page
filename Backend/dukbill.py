@@ -1,15 +1,23 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import RedirectResponse
+
 from pydantic import BaseModel
 from basiq_api import BasiqAPI
+
+
 from auth import verify_token, verify_google_token
 from users import *
 from db_init import initialize_database
 from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
+from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
+
+
 from fastapi.responses import RedirectResponse
 import requests
+import threading
 
 # Initialize FastAPI app
 app = FastAPI(title="Dukbill API", version="1.0.0")
@@ -41,15 +49,13 @@ security = HTTPBearer()
 class GoogleTokenRequest(BaseModel):
     googleToken: str
 
-# Dependency: Get current user claims from Auth0 token
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     claims = verify_token(token)
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return claims, token  # return both claims and raw access token
+    return claims, token
 
-# Helper to call Auth0 /userinfo endpoint
 def get_user_info_from_auth0(access_token: str):
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
     response = requests.get(
@@ -111,7 +117,6 @@ async def register(user=Depends(get_current_user)):
                 "profileComplete": user["profile_complete"]
             }
 
-# Full Auth0 logout
 @app.get("/auth/logout")
 async def logout():
     logout_url = (
@@ -149,6 +154,38 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
         "validatedBroker": validatedBroker,
     }
 
+@app.post("/gmail/scan")
+async def gmail_scan(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+
+    toggle_email_scan(user_obj["user_id"])
+
+    consent_url = get_google_auth_url()
+
+    return {"consent_url": consent_url}
+
+@app.get("/gmail/callback")
+async def gmail_callback(code: str, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+
+    # Exchange authorization code for access token
+    tokens = exchange_code_for_tokens(code)
+    access_token = tokens.get("access_token")
+
+    # Start Gmail scan in background
+    threading.Thread(
+        target=run_gmail_scan,
+        args=(user_obj["email"], access_token),
+        daemon=True
+    ).start()
+
+    # Redirect user to a frontend page (adjust your URL)
+    return RedirectResponse("https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/signup?completed=true")
+
 @app.get("/user/profile")
 async def fetch_user_profile(user=Depends(get_current_user)):
     claims, access_token = user
@@ -169,7 +206,8 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         "name": user_obj["name"],
         "id": profile_id,
         "picture": user_obj["picture"],
-        "user_type": user_type
+        "user_type": user_type,
+        "email_scan": user_obj["email_scan"]
     }
 
 @app.get("/brokers/client/list")
@@ -205,7 +243,6 @@ async def toggle_broker_access_route(user=Depends(get_current_user)):
     
     toggle_broker_access(client["client_id"])
     return {"BrokerAccess": not client["brokerAccess"]}
-
 
 @app.post("/clients/category/documents")
 async def get_category_documents(request: dict, user=Depends(get_current_user)):  
@@ -256,7 +293,6 @@ async def connect_bank(user=Depends(get_current_user)):
         
     client_token = basiq.get_client_access_token(user["basiq_id"])
     consent_url = f"https://consent.basiq.io/home?token={client_token}"
-    print(consent_url)
     return RedirectResponse(consent_url)
 
 @app.get("/clients/bank/transactions")

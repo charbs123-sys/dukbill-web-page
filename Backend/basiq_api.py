@@ -2,7 +2,6 @@ import requests
 import datetime
 import time
 from config import BASIQ_API_KEY, BASIQ_BASE_URL
-from pprint import pprint
 
 
 class BasiqAPI:
@@ -76,7 +75,6 @@ class BasiqAPI:
         
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        print(response.json())
         return response.json()
 
     def get_user_transactions(self, user_id: str, years: int = 2, active_connections: list = None):

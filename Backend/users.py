@@ -61,6 +61,11 @@ def toggle_broker_access(client_id):
 
     toggle_broker_access_db(client_id)
 
+def toggle_email_scan(user_id):
+    if not verify_user(user_id):
+        raise HTTPException(status_code=403, detail="Invalid User")
+
+    toggle_email_Scan_db(user_id)
 
 def get_client_dashboard(client_id, email):
     if not verify_client_by_id(client_id):
