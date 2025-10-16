@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# mySQL Credentials
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "user": os.getenv("DB_USER"),
@@ -11,20 +12,26 @@ DB_CONFIG = {
     "port": 3306
 }
 
+# Auth0 Credentials
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
-
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
 POST_LOGOUT_REDIRECT_URI = os.getenv("POST_LOGOUT_REDIRECT_URI")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
+# S3 Credentials
 S3_CONFIG = {
     "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
     "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
     "AWS_REGION": os.getenv("AWS_REGION"),
     "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME")
 }
+
+# Basiq API Credentials
+BASIQ_API_KEY = os.getenv("BASIQ_API_KEY")
+BASIQ_BASE_URL = os.getenv("BASIQ_BASE_URL")
+
 
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [

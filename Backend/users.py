@@ -26,7 +26,7 @@ def verify_client(client_id):
     return verify_client_by_id(client_id)
 
 def get_user_from_client(client_id):
-    return get_user_email_by_client_id(client_id)
+    return get_user_by_client_id(client_id)
 
 def register_user(auth0_id, email, picture, profileComplete):
     user_id = add_user(auth0_id, email, picture, profileComplete)
@@ -140,3 +140,6 @@ def get_client_category_documents(client_id, email, category):
             "url": url
         })
     return filtered_docs
+
+def add_basiq_id(user_id, basiq_id):
+    add_basiq_id_db(user_id, basiq_id)
