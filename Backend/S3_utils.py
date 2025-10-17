@@ -86,3 +86,23 @@ def get_presigned_url(key: str, expires_in: int = 300) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error generating presigned URL for '{key}': {e}")
     
+def save_json_file(email, endpoint, data):
+    key = hash_email(email) + endpoint
+    try:
+        json_str = json.dumps(data, ensure_ascii=False, indent=2)
+        
+        buffer = io.BytesIO()
+        with gzip.GzipFile(fileobj=buffer, mode="wb") as gz_file:
+            gz_file.write(json_str.encode("utf-8"))
+
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=buffer.getvalue(),
+            ContentType="application/json",
+            ContentEncoding="gzip",
+        )
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Error saving '{key}' to S3: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error saving '{key}': {e}")

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse
@@ -9,6 +9,7 @@ from basiq_api import BasiqAPI
 
 from auth import verify_token, verify_google_token
 from users import *
+from documents import *
 from db_init import initialize_database
 from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
@@ -334,6 +335,21 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 
     transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
     return {"transactions": transactions}
+
+@app.post("/edit/document/card")
+async def edit_client_document_endpoint(updates: dict = Body(...), user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    email = user_obj["email"]
+
+    edit_client_document(email, updates)
+
+    return {"status": "success"}
 
 @app.get("/health")
 async def health_check():
