@@ -10,7 +10,6 @@ def get_client_dashboard(client_id, email):
 
     documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
 
-    # Build categories map
     categories_map = {}
     for doc in documents:
         category = doc.get("broker_document_category", "Uncategorized")
@@ -154,3 +153,34 @@ def edit_client_document(client_email, update_data):
 
     return documents[doc_index]
 
+def delete_client_document(client_email: str, threadid: str):
+    if not threadid:
+        raise HTTPException(status_code=400, detail="Missing threadid")
+
+    documents = get_json_file(client_email, "/broker_anonymized/emails_anonymized.json")
+
+    doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == threadid), None)
+    if doc_index is None:
+        raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
+
+    doc_to_delete = documents.pop(doc_index)
+
+    save_json_file(client_email, "/broker_anonymized/emails_anonymized.json", documents)
+
+    category = doc_to_delete.get("broker_document_category", "Uncategorized")
+    hashed_email = hash_email(client_email)
+    prefix = f"{hashed_email}/categorised/{category}/pdfs/"
+
+    s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    files = s3_objects.get("Contents", [])
+
+    deleted_files = []
+
+    for obj in files:
+        key = obj["Key"]
+        filename = key.split("/")[-1]
+        if filename.startswith(threadid + "_") or filename.startswith(threadid):
+            s3.delete_object(Bucket=bucket_name, Key=key)
+            deleted_files.append(key)
+
+    return 
