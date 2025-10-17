@@ -389,9 +389,7 @@ async def upload_document_card(
         return {"status": "success", "uploaded_document": new_doc}
 
     except Exception as e:
-        print("Upload error:", e)  # <-- this will show the exact Python error
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/health")
 async def health_check():
