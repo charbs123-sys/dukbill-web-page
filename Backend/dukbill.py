@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Body, Request
+from fastapi import FastAPI, HTTPException, Depends, Body, Request, File, Form, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse
@@ -262,8 +262,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     auth0_id = claims["sub"]
 
     client = verify_client(client_id)
-    client_email = get_user_from_client(client_id)
-    headings = get_client_dashboard(client_id, client_email)
+    client_user = get_user_from_client(client_id)
+    headings = get_client_dashboard(client_id, client_user["email"])
 
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
@@ -277,9 +277,9 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         return {"error": "Access denied"}
 
     category = request.get("category")
-    client = get_user_from_client(client_id)
+    client_user = get_user_from_client(client_id)
     
-    return get_client_category_documents(client_id, client["email"], category)
+    return get_client_category_documents(client_id, client_user["email"], category)
 
 @app.get("/basiq/connect")
 async def connect_bank(user=Depends(get_current_user)):
@@ -367,6 +367,31 @@ async def delete_client_document_endpoint(request: Request, user=Depends(get_cur
 
     delete_client_document(email, threadid)
     return {"status": "success"}
+
+@app.post("/upload/document/card")
+async def upload_document_card(
+    category: str = Form(...),
+    company: str = Form(...),
+    amount: str = Form(...),
+    date: str = Form(...),
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    try:
+        claims, _ = user
+        auth0_id = claims["sub"]
+        user_obj = find_user(auth0_id)
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        email = user_obj["email"]
+        new_doc = await upload_client_document(email, category, company, amount, date, file)
+        return {"status": "success", "uploaded_document": new_doc}
+
+    except Exception as e:
+        print("Upload error:", e)  # <-- this will show the exact Python error
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/health")
 async def health_check():

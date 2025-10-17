@@ -2,7 +2,8 @@ from db_utils import *
 from S3_utils import *
 from helper import *
 from config import DOCUMENT_CATEGORIES
-
+from fastapi import UploadFile
+import uuid
 
 def get_client_dashboard(client_id, email):
     if not verify_client_by_id(client_id):
@@ -184,3 +185,35 @@ def delete_client_document(client_email: str, threadid: str):
             deleted_files.append(key)
 
     return 
+
+async def upload_client_document(email, category, company, amount, date, file: UploadFile):
+    documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+
+    threadid = str(uuid.uuid4())
+
+    hashed_email = hash_email(email)
+    file_ext = file.filename.split(".")[-1]
+    filename = f"{threadid}_1_{file.filename}"
+    s3_key = f"{hashed_email}/categorised/{category}/pdfs/{filename}"
+
+    file_bytes = await file.read()
+    s3.upload_fileobj(
+        io.BytesIO(file_bytes),
+        bucket_name,
+        s3_key,
+        ExtraArgs={"ContentType": "application/pdf"}
+    )
+
+    new_doc = {
+        "threadid": threadid,
+        "broker_document_category": category,
+        "company": company,
+        "amount": float(amount),
+        "date": date,
+        "uploaded_at": datetime.utcnow().isoformat()
+    }
+
+    documents.append(new_doc)
+    save_json_file(email, "/broker_anonymized/emails_anonymized.json", documents)
+
+    return new_doc
