@@ -82,7 +82,7 @@ DOCUMENT_CATEGORIES = {
         "Gift Letter",
         "Guarantor Documents",
         "Superannuation Statement",
-        "Utility Bills"
-        # 'Miscellaneous or Unclassified'
+        "Utility Bills",
+        "Miscellaneous or Unclassified"
     ]
 }
