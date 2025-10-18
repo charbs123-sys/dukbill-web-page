@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body, Request, File, Form, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse
@@ -9,6 +9,7 @@ from basiq_api import BasiqAPI
 
 from auth import verify_token, verify_google_token
 from users import *
+from documents import *
 from db_init import initialize_database
 from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
@@ -261,8 +262,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     auth0_id = claims["sub"]
 
     client = verify_client(client_id)
-    client_email = get_user_from_client(client_id)
-    headings = get_client_dashboard(client_id, client_email)
+    client_user = get_user_from_client(client_id)
+    headings = get_client_dashboard(client_id, client_user["email"])
 
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
@@ -276,9 +277,9 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         return {"error": "Access denied"}
 
     category = request.get("category")
-    client = get_user_from_client(client_id)
+    client_user = get_user_from_client(client_id)
     
-    return get_client_category_documents(client_id, client["email"], category)
+    return get_client_category_documents(client_id, client_user["email"], category)
 
 @app.get("/basiq/connect")
 async def connect_bank(user=Depends(get_current_user)):
@@ -334,6 +335,61 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 
     transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
     return {"transactions": transactions}
+
+@app.post("/edit/document/card")
+async def edit_client_document_endpoint(updates: dict = Body(...), user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    email = user_obj["email"]
+
+    edit_client_document(email, updates)
+
+    return {"status": "success"}
+
+@app.delete("/delete/document/card")
+async def delete_client_document_endpoint(request: Request, user=Depends(get_current_user)):
+    data = await request.json()
+    threadid = data.get("id")
+
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    email = user_obj["email"]
+
+    delete_client_document(email, threadid)
+    return {"status": "success"}
+
+@app.post("/upload/document/card")
+async def upload_document_card(
+    category: str = Form(...),
+    company: str = Form(...),
+    amount: str = Form(...),
+    date: str = Form(...),
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    try:
+        claims, _ = user
+        auth0_id = claims["sub"]
+        user_obj = find_user(auth0_id)
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        email = user_obj["email"]
+        new_doc = await upload_client_document(email, category, company, amount, date, file)
+        return {"status": "success", "uploaded_document": new_doc}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():

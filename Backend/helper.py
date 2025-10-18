@@ -1,14 +1,21 @@
 from datetime import datetime
 import phonenumbers
 
-def parse_amount(amount_str):
-    if not amount_str:
-        return 0.0
-    try:
-        cleaned = amount_str.replace("$", "").replace(",", "")
-        return float(cleaned)
-    except ValueError:
-        return 0.0
+def parse_amount(amount):
+    """
+    Safely converts an amount to float.
+    Works if amount is a string with $/comma or a number.
+    """
+    if isinstance(amount, str):
+        # Remove $ and commas if present
+        cleaned = amount.replace("$", "").replace(",", "")
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0
+    elif isinstance(amount, (int, float)):
+        return float(amount)
+    return 0
 
 def normalize_date(date_str):
     if not date_str:
