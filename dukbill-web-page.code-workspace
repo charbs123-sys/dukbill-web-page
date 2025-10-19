@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "dukbill-web-page",
+			"path": "."
+		},
+		{
+			"name": "AWS_lambda",
+			"path": "../../basiq_api/AWS_lambda"
+		}
+	],
+	"settings": {}
+}
