@@ -1,6 +1,8 @@
 import mysql.connector
 import random
 import os
+from helper import *
+
 
 def get_connection():
     """Get a database connection"""

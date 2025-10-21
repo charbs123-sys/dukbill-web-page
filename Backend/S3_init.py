@@ -1,7 +1,6 @@
 import boto3
 from config import S3_CONFIG
 
-
 s3 = boto3.client(
     "s3",
     aws_access_key_id=S3_CONFIG["AWS_ACCESS_KEY_ID"],
