@@ -1,10 +1,22 @@
 import mysql.connector
 import random
-from config import DB_CONFIG
+import os
 from helper import *
 
 def get_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    """Get a database connection"""
+    try:
+        return mysql.connector.connect(
+            host=os.environ.get('DB_HOST'),
+            port=int(os.environ.get('DB_PORT', 3306)),
+            user=os.environ.get('DB_USER'),
+            password=os.environ.get('DB_PASSWORD'),
+            database=os.environ.get('DB_NAME', 'dukbill')
+        )
+    except mysql.connector.Error as err:
+        print(f"Error connecting to database: {err}")
+        raise
+
 
 def search_user_by_auth0(auth0_id):
     conn = get_connection()

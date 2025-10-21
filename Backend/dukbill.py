@@ -30,6 +30,9 @@ origins = [
     "https://api.vericare.com.au",
     "http://localhost:5000",
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5000",
+    "https://*.replit.dev",  # Add this to allow all Replit dev domains
 ]
 
 app.add_middleware(
@@ -390,6 +393,42 @@ async def upload_document_card(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/network")
+async def debug_network():
+    """Debug endpoint to test network connectivity"""
+    import socket
+    results = {
+        "hostname": socket.gethostname(),
+        "ipv6_test": None,
+        "auth0_dns": None,
+        "auth0_connection": None
+    }
+    
+    try:
+        # Test if we have IPv6 address
+        addrs = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6)
+        results["ipv6_test"] = f"Found {len(addrs)} IPv6 addresses"
+    except Exception as e:
+        results["ipv6_test"] = f"Error: {str(e)}"
+    
+    try:
+        # Test Auth0 DNS resolution
+        addrs = socket.getaddrinfo(AUTH0_DOMAIN, 443, socket.AF_INET6)
+        results["auth0_dns"] = [addr[4][0] for addr in addrs[:3]]
+    except Exception as e:
+        results["auth0_dns"] = f"Error: {str(e)}"
+    
+    try:
+        # Test actual connection
+        import requests
+        response = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=5)
+        results["auth0_connection"] = f"Success: {response.status_code}"
+    except Exception as e:
+        results["auth0_connection"] = f"Error: {str(e)}"
+    
+    return results
+
 
 @app.get("/health")
 async def health_check():
