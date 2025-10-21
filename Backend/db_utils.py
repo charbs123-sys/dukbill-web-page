@@ -1,10 +1,20 @@
 import mysql.connector
 import random
-from config import DB_CONFIG
-from helper import *
+import os
 
 def get_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    """Get a database connection"""
+    try:
+        return mysql.connector.connect(
+            host=os.environ.get('DB_HOST'),
+            port=int(os.environ.get('DB_PORT', 3306)),
+            user=os.environ.get('DB_USER'),
+            password=os.environ.get('DB_PASSWORD'),
+            database=os.environ.get('DB_NAME', 'dukbill')
+        )
+    except mysql.connector.Error as err:
+        print(f"Error connecting to database: {err}")
+        raise
 
 def search_user_by_auth0(auth0_id):
     conn = get_connection()
@@ -33,14 +43,12 @@ def retrieve_client(user_id):
     conn.close()
     return result
 
-from db_utils import get_connection
-
-def get_user_by_client_id(client_id):
+def get_user_email_by_client_id(client_id):
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
     
     query = """
-        SELECT u.*
+        SELECT u.email
         FROM clients c
         JOIN users u ON c.user_id = u.user_id
         WHERE c.client_id = %s;
@@ -52,7 +60,7 @@ def get_user_by_client_id(client_id):
     cursor.close()
     conn.close()
     
-    return result
+    return result[0] if result else None
 
 def generate_id(length=6):
     return ''.join(random.choices("0123456789", k=length))
@@ -72,7 +80,6 @@ def get_unique_broker_id():
     cursor.close()
     conn.close()
     return broker_id
-
 
 def get_unique_client_id():
     conn = get_connection()
@@ -174,14 +181,6 @@ def update_user_profile(auth0_id: str, profile_data: dict):
             fields.append("isBroker=%s")
             values.append(True)
 
-    if "phone" in profile_data:
-        phone = profile_data.pop("phone")
-        if phone:
-            formatted_phone = format_phonenumber(phone)
-            fields.append("phone=%s")
-            values.append(formatted_phone)
-
-
     for key, value in profile_data.items():
         if value is not None:
             fields.append(f"{key}=%s")
@@ -221,36 +220,12 @@ def get_clients_for_broker(broker_id):
     conn.close()
     return clients
 
-
 def toggle_broker_access_db(client_id):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         "UPDATE clients SET brokerAccess = NOT brokerAccess WHERE client_id = %s",
         (client_id,)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-def toggle_email_Scan_db(user_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET email_scan = NOT email_Scan WHERE user_id = %s",
-        (user_id,)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-   
-    
-def add_basiq_id_db(user_id, basiq_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET basiq_id = %s WHERE user_id = %s",
-        (basiq_id, user_id)
     )
     conn.commit()
     cursor.close()

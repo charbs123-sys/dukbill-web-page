@@ -1,44 +1,25 @@
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-# mySQL Credentials
+# No load_dotenv() in production - environment variables come from ECS
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME"),
-    "port": 3306
+    "host": os.environ.get("DB_HOST"),
+    "user": os.environ.get("DB_USER"),
+    "password": os.environ.get("DB_PASSWORD"),
+    "database": os.environ.get("DB_NAME", "dukbill"),
+    "port": int(os.environ.get("DB_PORT", 3306))
 }
 
-# Auth0 Credentials
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
-AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
-AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
-POST_LOGOUT_REDIRECT_URI = os.getenv("POST_LOGOUT_REDIRECT_URI")
+AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
+AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 
-# S3 Credentials
 S3_CONFIG = {
-    "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
-    "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
-    "AWS_REGION": os.getenv("AWS_REGION"),
-    "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME")
+    "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
+    "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    "AWS_REGION": os.environ.get("AWS_REGION", "ap-southeast-2"),
+    "S3_BUCKET_NAME": os.environ.get("S3_BUCKET_NAME")
 }
-
-# Basiq API Credentials
-BASIQ_API_KEY = os.getenv("BASIQ_API_KEY")
-BASIQ_BASE_URL = os.getenv("BASIQ_BASE_URL")
-
-# Gmail Connection
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8765/callback")
-SCOPE = os.getenv("SCOPE", "https://www.googleapis.com/auth/gmail.readonly")
-SEARCH_QUERY = os.getenv("SEARCH_QUERY", "has:attachment newer_than:2y")
-
 
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
@@ -57,7 +38,7 @@ DOCUMENT_CATEGORIES = {
         "HECS/HELP Debt"
     ],
     "ID & Verification Documents": [
-        "Driver’s Licence",
+        "Driver's Licence",
         "Passport",
         "Medicare Card",
         "Birth Certificate",
@@ -82,7 +63,6 @@ DOCUMENT_CATEGORIES = {
         "Gift Letter",
         "Guarantor Documents",
         "Superannuation Statement",
-        "Utility Bills",
-        "Miscellaneous or Unclassified"
+        "Utility Bills"
     ]
 }
