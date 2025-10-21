@@ -746,8 +746,3 @@ async def main_async(thread_ids: List[str], access_token: str, user_key: str, me
     )
 
     return to_retry
-
-
-if __name__ == '__main__':
-    EXAMPLE_THREAD_IDS = []  # fill with thread ids
-    ACCESS

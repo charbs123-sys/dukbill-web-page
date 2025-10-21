@@ -1,7 +1,7 @@
 import json
 import os
 import asyncio
-import email_collection
+import AWS_lambda_async.email_processing.email_collection as email_collection
 import boto3
 import hashlib
 from datetime import datetime
