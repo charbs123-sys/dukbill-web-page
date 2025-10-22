@@ -23,6 +23,9 @@ S3_CONFIG = {
 
 CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
 
+BASIQ_API_KEY = os.environ.get("BASIQ_API_KEY")
+BASIQ_BASE_URL = os.environ.get("BASIQ_BASE_URL")
+
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
         "Payslips",
