@@ -163,7 +163,7 @@ def get_google_auth_url():
         "response_type": "code",
         "scope": SCOPES,
         "access_type": "offline",
-        "include_granted_scopes": "true",
+        "include_granted_scopes": "false",
         "prompt": "consent",
     }
     return f"{AUTH_URL}?{urlencode(params)}"
