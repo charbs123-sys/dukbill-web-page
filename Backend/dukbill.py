@@ -43,7 +43,7 @@ def get_user_info_from_auth0(access_token: str):
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=5
         )
-        print("this is response)
+        print("this is response")
         print(response.json())
         if response.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
