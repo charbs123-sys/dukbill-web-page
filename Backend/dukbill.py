@@ -348,41 +348,38 @@ async def health_check():
 # ------------------------
 # IPv6 Check
 # ------------------------
-@app.get("/debug/ipv6")
-async def debug_ipv6():
+@app.get("/debug/network")
+async def debug_network():
+    """Debug endpoint to test network connectivity"""
+    import socket
     results = {
-        "ipv6_available": False,
-        "ipv6_addresses": [],
-        "auth0_ipv6_dns": [],
-        "auth0_ipv6_request": None
+        "hostname": socket.gethostname(),
+        "ipv6_test": None,
+        "auth0_dns": None,
+        "auth0_connection": None
     }
 
-    # Check if server has IPv6 addresses
     try:
+        # Test if we have IPv6 address
         addrs = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6)
-        results["ipv6_available"] = len(addrs) > 0
-        results["ipv6_addresses"] = [addr[4][0] for addr in addrs[:3]]  # first 3 IPv6 addresses
+        results["ipv6_test"] = f"Found {len(addrs)} IPv6 addresses"
     except Exception as e:
-        results["ipv6_available"] = False
-        results["ipv6_error"] = str(e)
+        results["ipv6_test"] = f"Error: {str(e)}"
 
-    # Test DNS resolution of Auth0 via IPv6
     try:
-        addrs = socket.getaddrinfo("auth0.com", 443, socket.AF_INET6)
-        results["auth0_ipv6_dns"] = [addr[4][0] for addr in addrs[:3]]
+        # Test Auth0 DNS resolution
+        addrs = socket.getaddrinfo(AUTH0_DOMAIN, 443, socket.AF_INET6)
+        results["auth0_dns"] = [addr[4][0] for addr in addrs[:3]]
     except Exception as e:
-        results["auth0_ipv6_dns_error"] = str(e)
+        results["auth0_dns"] = f"Error: {str(e)}"
 
-    # Test actual HTTP request to Auth0 via IPv6
     try:
-        session = requests.Session()
-        response = session.get("https://auth0.com/.well-known/jwks.json", timeout=5)
-        results["auth0_ipv6_request"] = {
-            "status_code": response.status_code,
-            "length": len(response.content)
-        }
+        # Test actual connection
+        import requests
+        response = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=5)
+        results["auth0_connection"] = f"Success: {response.status_code}"
     except Exception as e:
-        results["auth0_ipv6_request_error"] = str(e)
+        results["auth0_connection"] = f"Error: {str(e)}"
 
     return results
 
