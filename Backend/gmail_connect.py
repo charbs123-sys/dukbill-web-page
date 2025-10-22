@@ -161,7 +161,7 @@ def get_google_auth_url():
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": SCOPE,
+        "scope": SCOPES,
         "access_type": "offline",
         "include_granted_scopes": "true",
         "prompt": "consent",

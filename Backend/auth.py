@@ -1,15 +1,15 @@
-import socket
-import os
+# import socket
+# import os
 
-# Monkey patch socket.getaddrinfo to prefer IPv6 - MUST be first
-_original_getaddrinfo = socket.getaddrinfo
+# # Monkey patch socket.getaddrinfo to prefer IPv6 - MUST be first
+# _original_getaddrinfo = socket.getaddrinfo
 
-def ipv6_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    """Force IPv6 resolution"""
-    # Always request IPv6
-    return _original_getaddrinfo(host, port, socket.AF_INET6, type, proto, flags)
+# def ipv6_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+#     """Force IPv6 resolution"""
+#     # Always request IPv6
+#     return _original_getaddrinfo(host, port, socket.AF_INET6, type, proto, flags)
 
-socket.getaddrinfo = ipv6_getaddrinfo
+# socket.getaddrinfo = ipv6_getaddrinfo
 
 # Now import everything else
 import jwt
