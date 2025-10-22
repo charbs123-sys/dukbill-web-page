@@ -21,6 +21,8 @@ S3_CONFIG = {
     "S3_BUCKET_NAME": os.environ.get("S3_BUCKET_NAME")
 }
 
+CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
+
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
         "Payslips",
