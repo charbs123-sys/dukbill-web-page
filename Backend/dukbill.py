@@ -33,6 +33,7 @@ class IPv6Adapter(HTTPAdapter):
         self.poolmanager = PoolManager(*args, **kwargs)
 
 def get_user_info_from_auth0(access_token: str):
+    print(access_token)
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
     session = requests.Session()
     #session.mount("https://", IPv6Adapter())  # Force IPv6
@@ -42,6 +43,8 @@ def get_user_info_from_auth0(access_token: str):
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=5
         )
+        print("this is response")
+        print(response.json())
         if response.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
         return response.json()
@@ -384,6 +387,7 @@ async def debug_network():
     return results
 
 # ------------------------
+<<<<<<< HEAD
 # Internet/NAT connectivity check
 # ------------------------
 @app.get("/internet/check")
@@ -508,8 +512,10 @@ async def check_internet():
 
 
 # ------------------------
+=======
+>>>>>>> c127a31b712de5ad53713b92ff776b3d344ccfbc
 # Run App
 # ------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
