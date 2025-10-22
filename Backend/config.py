@@ -11,6 +11,9 @@ DB_CONFIG = {
 
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
+AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID")
+POST_LOGOUT_REDIRECT_URI = os.environ.get("POST_LOGOUT_REDIRECT_URI")
+
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 
@@ -25,6 +28,11 @@ CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
 
 BASIQ_API_KEY = os.environ.get("BASIQ_API_KEY")
 BASIQ_BASE_URL = os.environ.get("BASIQ_BASE_URL")
+
+CLIENT_ID = os.environ.get("CLIENT_ID")
+CLIENT_SECRET= os.environ.get("CLIENT_SECRET")
+REDIRECT_URI= os.environ.get("REDIRECT_URI")
+SCOPES = os.environ.get("SCOPES")
 
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
