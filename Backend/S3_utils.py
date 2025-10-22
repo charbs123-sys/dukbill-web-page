@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from botocore.exceptions import ClientError
 from S3_init import s3, bucket_name
+from config import CLOUDFRONT_DOMAIN
 
 def hash_email(email):
     return hashlib.sha256(email.encode('utf-8')).hexdigest()
@@ -18,35 +19,10 @@ def list_files(prefix: str = ""):
         return []
     return [obj["Key"] for obj in response["Contents"]]
 
-def get_pdf_file(key: str):
-    """
-    Retrieve a PDF from S3 and return it as a StreamingResponse.
-    """
-    try:
-        # Get file from S3
-        s3_object = s3.get_object(Bucket=bucket_name, Key=key)
-        file_bytes = s3_object["Body"].read()
-
-        # Stream PDF response
-        pdf_stream = io.BytesIO(file_bytes)
-        filename = key.split("/")[-1]
-
-        return StreamingResponse(
-            pdf_stream,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'inline; filename="{filename}"'
-            }
-        )
-
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "NoSuchKey":
-            raise HTTPException(status_code=404, detail=f"PDF '{key}' not found in S3")
-        raise HTTPException(status_code=500, detail=f"S3 error retrieving '{key}': {e}")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {e}")
-
+# def get_pdf_file(key: str):
+#     s3_object = s3.get_object(Bucket=bucket_name, Key=key)
+#     file_bytes = s3_object["Body"].read()
+#     return StreamingResponse(io.BytesIO(file_bytes), media_type="application/pdf")
 
 def get_json_file(email, endpoint):
     key = hash_email(email) + endpoint
@@ -68,23 +44,8 @@ def get_json_file(email, endpoint):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error reading '{key}': {e}")
 
-def get_presigned_url(key: str, expires_in: int = 300) -> str:
-    try:
-        url = s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={"Bucket": bucket_name, "Key": key},
-            ExpiresIn=expires_in
-        )
-        return url
-
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "NoSuchKey":
-            raise HTTPException(status_code=404, detail=f"File '{key}' not found in S3")
-        raise HTTPException(status_code=500, detail=f"S3 error generating presigned URL for '{key}': {e}")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error generating presigned URL for '{key}': {e}")
+def get_cloudfront_url(key: str) -> str:
+    return f"https://{CLOUDFRONT_DOMAIN}/{key}"
     
 def save_json_file(email, endpoint, data):
     key = hash_email(email) + endpoint

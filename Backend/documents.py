@@ -80,7 +80,7 @@ def get_client_category_documents(client_id, email, category):
         if not pdf_keys:
             continue
 
-        urls = [get_presigned_url(k) for k in pdf_keys]
+        urls = [get_cloudfront_url(k) for k in pdf_keys]
 
         filtered_docs.append({
             "id": doc.get("threadid"),
