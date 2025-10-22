@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlencode
 from fastapi import BackgroundTasks
-from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPE, SEARCH_QUERY
+from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES, SEARCH_QUERY
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
