@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Body, Request, File, Form, UploadFile, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse
@@ -14,15 +14,47 @@ from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 
-from fastapi.responses import RedirectResponse
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
+import socket
 import threading
+import os
 
-# Initialize FastAPI app
+# ------------------------
+# IPv6-enabled Requests
+# ------------------------
+class IPv6Adapter(HTTPAdapter):
+    """Transport adapter that forces IPv6 connections."""
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs['socket_options'] = [
+            (socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        ]
+        self.poolmanager = PoolManager(*args, **kwargs)
+
+def get_user_info_from_auth0(access_token: str):
+    userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
+    session = requests.Session()
+    session.mount("https://", IPv6Adapter())  # Force IPv6
+    try:
+        response = session.get(
+            userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=5
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
+        return response.json()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=503, detail=f"Auth0 request failed: {str(e)}")
+
+# ------------------------
+# FastAPI App Initialization
+# ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
 basiq = BasiqAPI()
 
-# Allowed CORS origins
+# CORS settings
 origins = [
     "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev",
     "https://api.vericare.com.au",
@@ -30,9 +62,8 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5000",
-    "https://*.replit.dev",  # Add this to allow all Replit dev domains
+    "https://*.replit.dev",
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -44,13 +75,18 @@ app.add_middleware(
 # Initialize database
 initialize_database()
 
-# Security dependency for extracting Bearer token
+# Security dependency
 security = HTTPBearer()
 
-# Pydantic model for Google signup
+# ------------------------
+# Pydantic Models
+# ------------------------
 class GoogleTokenRequest(BaseModel):
     googleToken: str
 
+# ------------------------
+# Dependencies
+# ------------------------
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     claims = verify_token(token)
@@ -58,16 +94,9 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return claims, token
 
-def get_user_info_from_auth0(access_token: str):
-    userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
-    response = requests.get(
-        userinfo_url,
-        headers={"Authorization": f"Bearer {access_token}"}
-    )
-    if response.status_code != 200:
-        raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
-    return response.json()
-
+# ------------------------
+# Auth / User Routes
+# ------------------------
 @app.post("/api/google-signup")
 async def google_signup(req: GoogleTokenRequest):
     payload = verify_google_token(req.googleToken)
@@ -78,46 +107,23 @@ async def google_signup(req: GoogleTokenRequest):
 @app.post("/auth/client/register")
 async def register(user=Depends(get_current_user)):
     claims, access_token = user
-    # Fetch full profile from Auth0
     profile = get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
-    
-    user = find_user(auth0_id)
+    user_obj = find_user(auth0_id)
     missing_fields = []
-    
-    # handles new user
-    if not user:
+
+    if not user_obj:
         user_id = register_user(auth0_id, profile["email"], profile["picture"], False)
         missing_fields = ["name", "company", "phone"]
-        return {
-            "user": user_id,
-            "isNewUser": True,
-            "missingFields": missing_fields,
-            "profileComplete": False
-        }   
+        return {"user": user_id, "isNewUser": True, "missingFields": missing_fields, "profileComplete": False}
     else:
-    # existing user with complete profile 
-        if user["profile_complete"]:
-            return {
-                "user": user["user_id"],
-                "isNewUser": False,
-                "missingFields": missing_fields,
-                "profileComplete": user["profile_complete"]
-            } 
-        # existing user with incomplete profile
+        if user_obj["profile_complete"]:
+            return {"user": user_obj["user_id"], "isNewUser": False, "missingFields": missing_fields, "profileComplete": True}
         else:
-            fields_to_check = ["name", "company", "phone"]
-            
-            for field in fields_to_check:
-                if user.get(field) is None: 
+            for field in ["name", "company", "phone"]:
+                if not user_obj.get(field):
                     missing_fields.append(field)
-
-            return {
-                "user": user["user_id"],
-                "isNewUser": False,
-                "missingFields": missing_fields,
-                "profileComplete": user["profile_complete"]
-            }
+            return {"user": user_obj["user_id"], "isNewUser": False, "missingFields": missing_fields, "profileComplete": False}
 
 @app.get("/auth/logout")
 async def logout():
@@ -133,14 +139,13 @@ async def logout():
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
-       
     auth0_id = profile["sub"]
     user_type = profile_data["user_type"]
     broker_id = profile_data.pop("broker_id", None)
     user_obj = update_profile(auth0_id, profile_data)
     validatedBroker = False
 
-    if user_type == 'client':
+    if user_type == "client":
         validatedBroker = bool(register_client(user_obj["user_id"], broker_id))
     elif user_type == "broker":
         register_broker(user_obj["user_id"])
@@ -149,23 +154,20 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     return {
         "user": user_obj["user_id"],
         "profileComplete": user_obj["profile_complete"],
-        "missingFields": [
-            field for field in ["full_name", "phone_number", "company_name"]
-            if not user_obj.get(field)
-        ],
+        "missingFields": [f for f in ["full_name", "phone_number", "company_name"] if not user_obj.get(f)],
         "validatedBroker": validatedBroker,
     }
 
+# ------------------------
+# Gmail Integration
+# ------------------------
 @app.post("/gmail/scan")
 async def gmail_scan(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-
     toggle_email_scan(user_obj["user_id"])
-
     consent_url = get_google_auth_url()
-
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
@@ -173,28 +175,19 @@ async def gmail_callback(code: str, user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-
-    # Exchange authorization code for access token
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
-
-    # Start Gmail scan in background
-    threading.Thread(
-        target=run_gmail_scan,
-        args=(user_obj["email"], access_token),
-        daemon=True
-    ).start()
-
-    # Redirect user to a frontend page (adjust your URL)
+    threading.Thread(target=run_gmail_scan, args=(user_obj["email"], access_token), daemon=True).start()
     return RedirectResponse("https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/signup?completed=true")
 
+# ------------------------
+# User Profile
+# ------------------------
 @app.get("/user/profile")
 async def fetch_user_profile(user=Depends(get_current_user)):
     claims, access_token = user
     auth0_id = claims["sub"]
-    
-    user_obj = find_user(auth0_id) 
-   
+    user_obj = find_user(auth0_id)
     if user_obj["isBroker"]:
         profile = find_broker(user_obj["user_id"])
         profile_id = profile["broker_id"]
@@ -203,97 +196,72 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         profile = find_client(user_obj["user_id"])
         profile_id = profile["client_id"]
         user_type = "client"
+    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_scan": user_obj["email_scan"]}
 
-    return {
-        "name": user_obj["name"],
-        "id": profile_id,
-        "picture": user_obj["picture"],
-        "user_type": user_type,
-        "email_scan": user_obj["email_scan"]
-    }
-
+# ------------------------
+# Broker Routes
+# ------------------------
 @app.get("/brokers/client/list")
 async def get_client_list(user=Depends(get_current_user)):
-    claims, access_token = user
-    auth0_id = claims["sub"]
-    
-    user = find_user(auth0_id)
-    broker = find_broker(user["user_id"])
-    clients = get_broker_clients(broker["broker_id"])
-
-    return {"clients": clients}
-
-@app.get("/clients/dashboard")
-async def get_client_documents(user=Depends(get_current_user)):
-    claims, access_token = user
-    auth0_id = claims["sub"]
-
-    user = find_user(auth0_id)
-    client = find_client(user["user_id"])
-
-    headings = get_client_dashboard(client["client_id"], user["email"])
-    
-    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
-
-@app.post("/broker/access")
-async def toggle_broker_access_route(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-    
-    user = find_user(auth0_id)
-    client = find_client(user["user_id"])
-    
-    toggle_broker_access(client["client_id"])
-    return {"BrokerAccess": not client["brokerAccess"]}
-
-@app.post("/clients/category/documents")
-async def get_category_documents(request: dict, user=Depends(get_current_user)):  
-    claims, access_token = user
-    auth0_id = claims["sub"]
-    
-    category = request.get("category")
-    user = find_user(auth0_id)
-    client = find_client(user["user_id"])
-    
-    return get_client_category_documents(client["client_id"], user["email"], category)
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
+    clients = get_broker_clients(broker["broker_id"])
+    return {"clients": clients}
 
 @app.get("/brokers/client/{client_id}/dashboard")
 async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_user)):
     claims, _ = user
-    auth0_id = claims["sub"]
-
     client = verify_client(client_id)
     client_user = get_user_from_client(client_id)
     headings = get_client_dashboard(client_id, client_user["email"])
-
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/brokers/client/{client_id}/category/documents")
-async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):  
-    claims, access_token = user
-    auth0_id = claims["sub"]
-
+async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):
+    claims, _ = user
     client = verify_client(client_id)
     if not client["brokerAccess"]:
         return {"error": "Access denied"}
-
     category = request.get("category")
     client_user = get_user_from_client(client_id)
-    
     return get_client_category_documents(client_id, client_user["email"], category)
 
+# ------------------------
+# Client Routes
+# ------------------------
+@app.get("/clients/dashboard")
+async def get_client_documents(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    headings = get_client_dashboard(client["client_id"], user_obj["email"])
+    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
+
+@app.post("/clients/category/documents")
+async def get_category_documents(request: dict, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    category = request.get("category")
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    return get_client_category_documents(client["client_id"], user_obj["email"], category)
+
+# ------------------------
+# Basiq Integration
+# ------------------------
 @app.get("/basiq/connect")
 async def connect_bank(user=Depends(get_current_user)):
-    claims, access_token = user
+    claims, _ = user
     auth0_id = claims["sub"]
-
-    user = find_user(auth0_id)
-    if not user["basiq_id"]:
-        basiq_user = basiq.create_user(user["email"], user["phone"])
-        add_basiq_id(user["user_id"], basiq_user["id"])
-        user = find_user(auth0_id)
-        
-    client_token = basiq.get_client_access_token(user["basiq_id"])
+    user_obj = find_user(auth0_id)
+    if not user_obj["basiq_id"]:
+        basiq_user = basiq.create_user(user_obj["email"], user_obj["phone"])
+        add_basiq_id(user_obj["user_id"], basiq_user["id"])
+        user_obj = find_user(auth0_id)
+    client_token = basiq.get_client_access_token(user_obj["basiq_id"])
     consent_url = f"https://consent.basiq.io/home?token={client_token}"
     return RedirectResponse(consent_url)
 
@@ -301,72 +269,55 @@ async def connect_bank(user=Depends(get_current_user)):
 async def get_client_bank_transactions(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-
-    user = find_user(auth0_id)
-    basiq_id = user.get("basiq_id")
+    user_obj = find_user(auth0_id)
+    basiq_id = user_obj.get("basiq_id")
     if not basiq_id:
         return {"transactions": []}
-
-    connections_resp = basiq.get_user_connections(basiq_id)
-    connections = connections_resp.get("data", [])
+    connections = basiq.get_user_connections(basiq_id).get("data", [])
     if not connections:
         return {"transactions": []}
-
     transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
     return {"transactions": transactions}
-
 
 @app.get("/brokers/client/{client_id}/bank/transactions")
 async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
-    claims, _ = user
-
     client = verify_client(client_id)
     if not client.get("brokerAccess"):
         return {"error": "Access denied"}
-
-    user_client = get_user_from_client(client_id)
-    basiq_id = user_client.get("basiq_id")
+    client_user = get_user_from_client(client_id)
+    basiq_id = client_user.get("basiq_id")
     if not basiq_id:
         return {"transactions": []}
-
-    connections_resp = basiq.get_user_connections(basiq_id)
-    connections = connections_resp.get("data", [])
+    connections = basiq.get_user_connections(basiq_id).get("data", [])
     if not connections:
         return {"transactions": []}
-
     transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
     return {"transactions": transactions}
 
+# ------------------------
+# Document Routes
+# ------------------------
 @app.post("/edit/document/card")
 async def edit_client_document_endpoint(updates: dict = Body(...), user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-
     email = user_obj["email"]
-
     edit_client_document(email, updates)
-
     return {"status": "success"}
 
 @app.delete("/delete/document/card")
 async def delete_client_document_endpoint(request: Request, user=Depends(get_current_user)):
     data = await request.json()
     threadid = data.get("id")
-
     claims, _ = user
     auth0_id = claims["sub"]
-
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-
-    email = user_obj["email"]
-
-    delete_client_document(email, threadid)
+    delete_client_document(user_obj["email"], threadid)
     return {"status": "success"}
 
 @app.post("/upload/document/card")
@@ -378,58 +329,25 @@ async def upload_document_card(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    try:
-        claims, _ = user
-        auth0_id = claims["sub"]
-        user_obj = find_user(auth0_id)
-        if not user_obj:
-            raise HTTPException(status_code=404, detail="User not found")
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    email = user_obj["email"]
+    new_doc = await upload_client_document(email, category, company, amount, date, file)
+    return {"status": "success", "uploaded_document": new_doc}
 
-        email = user_obj["email"]
-        new_doc = await upload_client_document(email, category, company, amount, date, file)
-        return {"status": "success", "uploaded_document": new_doc}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/debug/network")
-# async def debug_network():
-#     """Debug endpoint to test network connectivity"""
-#     import socket
-#     results = {
-#         "hostname": socket.gethostname(),
-#         "ipv6_test": None,
-#         "auth0_dns": None,
-#         "auth0_connection": None
-#     }
-#     try:
-#         # Test if we have IPv6 address
-#         addrs = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6)
-#         results["ipv6_test"] = f"Found {len(addrs)} IPv6 addresses"
-#     except Exception as e:
-#         results["ipv6_test"] = f"Error: {str(e)}"
-    
-#     try:
-#         # Test Auth0 DNS resolution
-#         addrs = socket.getaddrinfo(AUTH0_DOMAIN, 443, socket.AF_INET6)
-#         results["auth0_dns"] = [addr[4][0] for addr in addrs[:3]]
-#     except Exception as e:
-#         results["auth0_dns"] = f"Error: {str(e)}"
-    
-#     try:
-#         # Test actual connection
-#         import requests
-#         response = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=5)
-#         results["auth0_connection"] = f"Success: {response.status_code}"
-#     except Exception as e:
-#         results["auth0_connection"] = f"Error: {str(e)}"
-    
-#     return results
-
+# ------------------------
+# Health Check
+# ------------------------
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}
 
+# ------------------------
+# Run App
+# ------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
