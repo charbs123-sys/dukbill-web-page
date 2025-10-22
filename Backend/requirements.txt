@@ -1,11 +1,12 @@
-﻿flask
+fastapi
+uvicorn[standard]
+gunicorn
+flask
 mysql-connector-python
 authlib
 requests
 python-dotenv
 PyJWT[crypto]
-fastapi
-uvicorn
 google-auth
 cryptography
 boto3
