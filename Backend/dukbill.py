@@ -33,6 +33,7 @@ class IPv6Adapter(HTTPAdapter):
         self.poolmanager = PoolManager(*args, **kwargs)
 
 def get_user_info_from_auth0(access_token: str):
+    print(access_token)
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
     session = requests.Session()
     #session.mount("https://", IPv6Adapter())  # Force IPv6
