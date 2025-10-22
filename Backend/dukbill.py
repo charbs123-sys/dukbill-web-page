@@ -6,7 +6,6 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from basiq_api import BasiqAPI
 
-
 from auth import verify_token, verify_google_token
 from users import *
 from documents import *
@@ -14,7 +13,6 @@ from db_init import initialize_database
 from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
 from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
-
 
 from fastapi.responses import RedirectResponse
 import requests
@@ -404,7 +402,6 @@ async def debug_network():
         "auth0_dns": None,
         "auth0_connection": None
     }
-    
     try:
         # Test if we have IPv6 address
         addrs = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6)
@@ -428,7 +425,6 @@ async def debug_network():
         results["auth0_connection"] = f"Error: {str(e)}"
     
     return results
-
 
 @app.get("/health")
 async def health_check():
