@@ -41,7 +41,7 @@ def get_user_info_from_auth0(access_token: str):
         response = session.get(
             userinfo_url,
             headers={"Authorization": f"Bearer {access_token}"},
-            timeout=5
+            timeout=30
         )
         print("this is response")
         print(response.json())
@@ -347,7 +347,8 @@ async def upload_document_card(
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}
-    
+
+'''
 # ------------------------
 # IPv6 Check
 # ------------------------
@@ -385,7 +386,7 @@ async def debug_network():
         results["auth0_connection"] = f"Error: {str(e)}"
 
     return results
-
+'''
 # ------------------------
 # Run App
 # ------------------------
