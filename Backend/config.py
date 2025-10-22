@@ -33,6 +33,7 @@ CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET= os.environ.get("CLIENT_SECRET")
 REDIRECT_URI= os.environ.get("REDIRECT_URI")
 SCOPES = os.environ.get("SCOPES")
+SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "has:attachment newer_than:2y")
 
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
