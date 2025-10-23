@@ -156,7 +156,7 @@ def run_gmail_scan(user_email: str, access_token: str):
     post_batches_to_api(url, thread_ids, access_token, user_email, warnings, is_complete)
 
 # ===== OAuth redirect URL =====
-def get_google_auth_url():
+def get_google_auth_url(state):  # ← Add state parameter
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -165,5 +165,6 @@ def get_google_auth_url():
         "access_type": "offline",
         "include_granted_scopes": "false",
         "prompt": "consent",
+        "state": state,  # ← Add this line
     }
     return f"{AUTH_URL}?{urlencode(params)}"
