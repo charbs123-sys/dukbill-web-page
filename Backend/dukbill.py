@@ -184,17 +184,37 @@ async def gmail_scan(user=Depends(get_current_user)):
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
-async def gmail_callback(code: str, user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
+async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_current_user), add state
+    # Validate state token
+    state_data = oauth_states.get(state)
+    
+    if not state_data:
+        raise HTTPException(status_code=403, detail="Invalid or expired state token")
+    
+    if state_data["expires"] < time.time():
+        del oauth_states[state]
+        raise HTTPException(status_code=403, detail="State token expired")
+    
+    # Retrieve user from state
+    auth0_id = state_data["auth0_id"]
+    del oauth_states[state]  # Delete state (one-time use only)
+    
     user_obj = find_user(auth0_id)
+    
     print("this is code")
     print(code)
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
-    threading.Thread(target=run_gmail_scan, args=(user_obj["email"], access_token), daemon=True).start()
-    return RedirectResponse("https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/signup?completed=true")
-
+    
+    threading.Thread(
+        target=run_gmail_scan, 
+        args=(user_obj["email"], access_token), 
+        daemon=True
+    ).start()
+    
+    return RedirectResponse(
+        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
+    )
 # ------------------------
 # User Profile
 # ------------------------
