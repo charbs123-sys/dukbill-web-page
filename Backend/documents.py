@@ -53,7 +53,7 @@ def get_client_category_documents(client_id, email, category):
     filtered_docs = []
 
     hashed_email = hash_email(email)
-    prefix = f"{hashed_email}/categorised/{category}/pdfs/"
+    prefix = f"{hashed_email}/categorised/{category}/truncated/"
     
     s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
     files = s3_objects.get("Contents", [])
