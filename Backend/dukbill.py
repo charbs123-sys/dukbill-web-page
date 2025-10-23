@@ -32,7 +32,7 @@ class IPv6Adapter(HTTPAdapter):
         ]
         self.poolmanager = PoolManager(*args, **kwargs)
 
-def get_user_info_from_auth0(access_token: str):
+async def get_user_info_from_auth0(access_token: str):
     print(access_token)
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
     session = requests.Session()
@@ -110,7 +110,7 @@ async def google_signup(req: GoogleTokenRequest):
 @app.post("/auth/client/register")
 async def register(user=Depends(get_current_user)):
     claims, access_token = user
-    profile = get_user_info_from_auth0(access_token)
+    profile = await get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
     user_obj = find_user(auth0_id)
     missing_fields = []
