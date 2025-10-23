@@ -21,6 +21,9 @@ import socket
 import threading
 import os
 
+import secrets
+import time
+oauth_states = {}
 # ------------------------
 # IPv6-enabled Requests
 # ------------------------
@@ -170,7 +173,14 @@ async def gmail_scan(user=Depends(get_current_user)):
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     toggle_email_scan(user_obj["user_id"])
-    consent_url = get_google_auth_url()
+
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {
+        "auth0_id": auth0_id,
+        "expires": time.time() + 600  # 10 minutes from now
+    }
+    
+    consent_url = get_google_auth_url(state)
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
