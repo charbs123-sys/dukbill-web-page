@@ -201,15 +201,15 @@ async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_curre
     
     user_obj = find_user(auth0_id)
     
-    print("this is code")
-    print(code)
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token")  # may be None if Google didn’t return it
     
+    # If you use threading:
     threading.Thread(
-        target=run_gmail_scan, 
-        args=(user_obj["email"], access_token), 
-        daemon=True
+        target=run_gmail_scan,
+        args=(user_obj["email"], access_token, refresh_token),  # ← pass the 3rd arg
+        daemon=True,
     ).start()
     
     return RedirectResponse(
