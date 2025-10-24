@@ -21,6 +21,9 @@ import socket
 import threading
 import os
 
+import secrets
+import time
+oauth_states = {}
 # ------------------------
 # IPv6-enabled Requests
 # ------------------------
@@ -170,19 +173,48 @@ async def gmail_scan(user=Depends(get_current_user)):
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     toggle_email_scan(user_obj["user_id"])
-    consent_url = get_google_auth_url()
+
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {
+        "auth0_id": auth0_id,
+        "expires": time.time() + 600  # 10 minutes from now
+    }
+    
+    consent_url = get_google_auth_url(state)
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
-async def gmail_callback(code: str, user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
+async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_current_user), add state
+    # Validate state token
+    state_data = oauth_states.get(state)
+    
+    if not state_data:
+        raise HTTPException(status_code=403, detail="Invalid or expired state token")
+    
+    if state_data["expires"] < time.time():
+        del oauth_states[state]
+        raise HTTPException(status_code=403, detail="State token expired")
+    
+    # Retrieve user from state
+    auth0_id = state_data["auth0_id"]
+    del oauth_states[state]  # Delete state (one-time use only)
+    
     user_obj = find_user(auth0_id)
+    
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
-    threading.Thread(target=run_gmail_scan, args=(user_obj["email"], access_token), daemon=True).start()
-    return RedirectResponse("https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/signup?completed=true")
-
+    refresh_token = tokens.get("refresh_token")  # may be None if Google didn’t return it
+    
+    # If you use threading:
+    threading.Thread(
+        target=run_gmail_scan,
+        args=(user_obj["email"], access_token, refresh_token),  # ← pass the 3rd arg
+        daemon=True,
+    ).start()
+    
+    return RedirectResponse(
+        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
+    )
 # ------------------------
 # User Profile
 # ------------------------
@@ -347,7 +379,8 @@ async def upload_document_card(
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}
-    
+
+'''
 # ------------------------
 # IPv6 Check
 # ------------------------
@@ -385,7 +418,7 @@ async def debug_network():
         results["auth0_connection"] = f"Error: {str(e)}"
 
     return results
-
+'''
 # ------------------------
 <<<<<<< HEAD
 # Internet/NAT connectivity check
