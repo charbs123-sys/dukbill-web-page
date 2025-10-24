@@ -172,7 +172,7 @@ async def gmail_scan(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    toggle_email_scan(user_obj["user_id"])
+    # toggle_email_scan(user_obj["user_id"])
 
     state = secrets.token_urlsafe(32)
     oauth_states[state] = {

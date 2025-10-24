@@ -44,7 +44,6 @@ def get_client_dashboard(client_id, email):
 
     return headings
 
-
 def get_client_category_documents(client_id, email, category):
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -95,21 +94,28 @@ def get_client_category_documents(client_id, email, category):
 def move_pdfs_to_new_category(email: str, threadid: str, old_category: str, new_category: str):
     hashed_email = hash_email(email)
 
-    old_prefix = f"{hashed_email}/categorised/{old_category}/pdfs/"
-    new_prefix = f"{hashed_email}/categorised/{new_category}/pdfs/"
 
-    s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=old_prefix)
-    files = s3_objects.get("Contents", [])
+    folders = ["pdfs", "truncated"]
+    for folder in folders:
+        old_prefix = f"{hashed_email}/categorised/{old_category}/{folder}/"
+        new_prefix = f"{hashed_email}/categorised/{new_category}/{folder}/"
 
-    for obj in files:
-        key = obj["Key"]
-        filename = key.split("/")[-1]
+        s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=old_prefix)
+        files = s3_objects.get("Contents", [])
 
-        if filename.startswith(threadid + "_") or filename.startswith(threadid):
-            new_key = new_prefix + filename
+        for obj in files:
+            key = obj["Key"]
+            filename = key.split("/")[-1]
 
-            s3.copy_object(Bucket=bucket_name, CopySource={'Bucket': bucket_name, 'Key': key}, Key=new_key)
-            s3.delete_object(Bucket=bucket_name, Key=key)
+            if filename.startswith(threadid + "_") or filename.startswith(threadid):
+                new_key = new_prefix + filename
+
+                s3.copy_object(
+                    Bucket=bucket_name,
+                    CopySource={'Bucket': bucket_name, 'Key': key},
+                    Key=new_key
+                )
+                s3.delete_object(Bucket=bucket_name, Key=key)
 
 
 def edit_client_document(client_email, update_data):
@@ -190,20 +196,22 @@ async def upload_client_document(email, category, company, amount, date, file: U
     documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
 
     threadid = str(uuid.uuid4())
-
     hashed_email = hash_email(email)
-    file_ext = file.filename.split(".")[-1]
     filename = f"{threadid}_1_{file.filename}"
     s3_key = f"{hashed_email}/categorised/{category}/pdfs/{filename}"
 
     file_bytes = await file.read()
-    s3.upload_fileobj(
-        io.BytesIO(file_bytes),
-        bucket_name,
-        s3_key,
-        ExtraArgs={"ContentType": "application/pdf"}
-    )
 
+    # Upload full PDF
+    s3.upload_fileobj(io.BytesIO(file_bytes), bucket_name, s3_key, ExtraArgs={"ContentType": "application/pdf"})
+
+    # Generate and upload truncated PDF (first page)
+    truncated_bytes = truncate_pdf(file_bytes)
+    if truncated_bytes:
+        truncated_key = f"{hashed_email}/categorised/{category}/truncated/{filename}"
+        s3.upload_fileobj(io.BytesIO(truncated_bytes), bucket_name, truncated_key, ExtraArgs={"ContentType": "application/pdf"})
+
+    # Save metadata
     new_doc = {
         "threadid": threadid,
         "broker_document_category": category,
@@ -212,7 +220,6 @@ async def upload_client_document(email, category, company, amount, date, file: U
         "date": date,
         "uploaded_at": datetime.utcnow().isoformat()
     }
-
     documents.append(new_doc)
     save_json_file(email, "/broker_anonymized/emails_anonymized.json", documents)
 

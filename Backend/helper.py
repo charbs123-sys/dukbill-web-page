@@ -1,5 +1,7 @@
 from datetime import datetime
+from pypdf import PdfReader, PdfWriter
 import phonenumbers
+import io
 
 def parse_amount(amount):
     """
@@ -34,3 +36,14 @@ def format_phonenumber(phonenumber):
     parsed_number = phonenumbers.parse(phonenumber, "AU")
     formatted_number = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
     return formatted_number
+
+def truncate_pdf(file_bytes: bytes) -> bytes:
+    """Return a PDF containing only the first page of the original PDF."""
+    reader = PdfReader(io.BytesIO(file_bytes))
+    writer = PdfWriter()
+    if len(reader.pages) > 0:
+        writer.add_page(reader.pages[0])
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+    return b''  # empty PDF if no pages
