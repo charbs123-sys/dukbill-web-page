@@ -17,7 +17,9 @@ def get_connection():
         print(f"Error connecting to database: {err}")
         raise
 
-
+# ------------------------
+# Retrieve User/Client/Broker
+# ------------------------
 def search_user_by_auth0(auth0_id):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -37,15 +39,11 @@ def retrieve_broker(user_id):
     return result
 
 def retrieve_client(user_id):
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM clients WHERE user_id = %s", (user_id,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    with get_connection() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT * FROM clients WHERE user_id = %s", (user_id,))
+            result = cursor.fetchone()
     return result
-
-from db_utils import get_connection
 
 def get_user_by_client_id(client_id):
     conn = get_connection()
@@ -63,9 +61,11 @@ def get_user_by_client_id(client_id):
     
     cursor.close()
     conn.close()
-    
     return result
 
+# ------------------------
+# Generate Client/Broker ID
+# ------------------------
 def generate_id(length=6):
     return ''.join(random.choices("0123456789", k=length))
 
@@ -85,7 +85,6 @@ def get_unique_broker_id():
     conn.close()
     return broker_id
 
-
 def get_unique_client_id():
     conn = get_connection()
     cursor = conn.cursor()
@@ -102,19 +101,13 @@ def get_unique_client_id():
     conn.close()
     return client_id
 
+# ------------------------
+# Verify User/Client/Broker
+# ------------------------
 def verify_user_by_id(user_id):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return result
-
-def verify_broker_by_id(broker_id):
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM brokers WHERE broker_id = %s", (broker_id,))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -129,6 +122,30 @@ def verify_client_by_id(client_id):
     conn.close()
     return result
 
+def verify_broker_by_id(broker_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM brokers WHERE broker_id = %s", (broker_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
+
+def verify_email_db(client_id, email):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM emails WHERE client_id = %s and email_address = %s",
+        (client_id, email)
+    )
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
+
+# ------------------------
+# Add User/Client/Broker
+# ------------------------
 def add_user(auth0_id, email, picture, profileComplete=False):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -141,20 +158,6 @@ def add_user(auth0_id, email, picture, profileComplete=False):
     cursor.close()
     conn.close()
     return user_id
-
-def add_broker(user_id):
-    broker_id = get_unique_broker_id()
-    
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute(
-        "INSERT INTO brokers (broker_id, user_id) VALUES (%s, %s)",
-        (broker_id, user_id)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return broker_id
 
 def add_client(user_id, broker_id):
     client_id = get_unique_client_id()
@@ -170,6 +173,23 @@ def add_client(user_id, broker_id):
     conn.close()
     return client_id
 
+def add_broker(user_id):
+    broker_id = get_unique_broker_id()
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "INSERT INTO brokers (broker_id, user_id) VALUES (%s, %s)",
+        (broker_id, user_id)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return broker_id
+
+# ------------------------
+#  User profile
+# ------------------------
 def update_user_profile(auth0_id: str, profile_data: dict):
     conn = get_connection()
     cursor = conn.cursor()
@@ -211,7 +231,24 @@ def update_user_profile(auth0_id: str, profile_data: dict):
     conn.commit()
     cursor.close()
     conn.close()
-    
+
+# ------------------------
+#  Client
+# ------------------------
+def toggle_broker_access_db(client_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE clients SET brokerAccess = NOT brokerAccess WHERE client_id = %s",
+        (client_id,)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# ------------------------
+#  Broker
+# ------------------------
 def get_clients_for_broker(broker_id):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -233,30 +270,28 @@ def get_clients_for_broker(broker_id):
     conn.close()
     return clients
 
+# ------------------------
+#  Email
+# ------------------------
+def add_email_db(client_id, domain, email):
+    with get_connection() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "INSERT INTO emails (client_id, domain, email_address) VALUES (%s, %s, %s)",
+                (client_id, domain, email)
+            )
+        conn.commit()
 
-def toggle_broker_access_db(client_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE clients SET brokerAccess = NOT brokerAccess WHERE client_id = %s",
-        (client_id,)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
+def get_client_emails_db(client_id):
+    with get_connection() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT email_address FROM emails WHERE client_id = %s", (client_id,))
+            results = cursor.fetchall()
+    return results
 
-def toggle_email_Scan_db(user_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET email_scan = NOT email_Scan WHERE user_id = %s",
-        (user_id,)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-   
-    
+# ------------------------
+#  Basiq API
+# ------------------------
 def add_basiq_id_db(user_id, basiq_id):
     conn = get_connection()
     cursor = conn.cursor()

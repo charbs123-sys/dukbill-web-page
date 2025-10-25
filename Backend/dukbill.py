@@ -10,7 +10,7 @@ from auth import verify_token, verify_google_token
 from users import *
 from documents import *
 from db_init import initialize_database
-from config import AUTH0_DOMAIN, AUTH0_CLIENT_ID, POST_LOGOUT_REDIRECT_URI
+from config import AUTH0_DOMAIN
 from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 
@@ -24,35 +24,6 @@ import os
 import secrets
 import time
 oauth_states = {}
-# ------------------------
-# IPv6-enabled Requests
-# ------------------------
-class IPv6Adapter(HTTPAdapter):
-    """Transport adapter that forces IPv6 connections."""
-    def init_poolmanager(self, *args, **kwargs):
-        kwargs['socket_options'] = [
-            (socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        ]
-        self.poolmanager = PoolManager(*args, **kwargs)
-
-def get_user_info_from_auth0(access_token: str):
-    print(access_token)
-    userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
-    session = requests.Session()
-    #session.mount("https://", IPv6Adapter())  # Force IPv6
-    try:
-        response = session.get(
-            userinfo_url,
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=5
-        )
-        print("this is response")
-        print(response.json())
-        if response.status_code != 200:
-            raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
-        return response.json()
-    except requests.RequestException as e:
-        raise HTTPException(status_code=503, detail=f"Auth0 request failed: {str(e)}")
 
 # ------------------------
 # FastAPI App Initialization
@@ -93,6 +64,22 @@ class GoogleTokenRequest(BaseModel):
 # ------------------------
 # Dependencies
 # ------------------------
+def get_user_info_from_auth0(access_token: str):
+    userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
+    session = requests.Session()
+    try:
+        response = session.get(
+            userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=5
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
+        return response.json()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=503, detail=f"Auth0 request failed: {str(e)}")
+    
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     claims = verify_token(token)
@@ -119,27 +106,44 @@ async def register(user=Depends(get_current_user)):
     missing_fields = []
 
     if not user_obj:
-        user_id = register_user(auth0_id, profile["email"], profile["picture"], False)
+        # New user — register and mark missing fields
+        user_id = register_user(auth0_id, profile["email"], profile["picture"], profileComplete=False)
         missing_fields = ["name", "company", "phone"]
-        return {"user": user_id, "isNewUser": True, "missingFields": missing_fields, "profileComplete": False}
-    else:
-        if user_obj["profile_complete"]:
-            return {"user": user_obj["user_id"], "isNewUser": False, "missingFields": missing_fields, "profileComplete": True}
-        else:
-            for field in ["name", "company", "phone"]:
-                if not user_obj.get(field):
-                    missing_fields.append(field)
-            return {"user": user_obj["user_id"], "isNewUser": False, "missingFields": missing_fields, "profileComplete": False}
+        return {
+            "user": user_id,
+            "isNewUser": True,
+            "missingFields": missing_fields,
+            "profileComplete": False,
+        }
 
-@app.get("/auth/logout")
-async def logout():
-    logout_url = (
-        f"https://{AUTH0_DOMAIN}/v2/logout?"
-        f"client_id={AUTH0_CLIENT_ID}&"
-        f"returnTo={POST_LOGOUT_REDIRECT_URI}&"
-        f"federated"
-    )
-    return RedirectResponse(url=logout_url)
+    if user_obj["profile_complete"]:
+        return {
+            "user": user_obj["user_id"],
+            "isNewUser": False,
+            "missingFields": [],
+            "profileComplete": True,
+        }
+
+    for field in ["name", "company", "phone"]:
+        if not user_obj.get(field):
+            missing_fields.append(field)
+
+    return {
+        "user": user_obj["user_id"],
+        "isNewUser": False,
+        "missingFields": missing_fields,
+        "profileComplete": False,
+    }
+
+# @app.get("/auth/logout")
+# async def logout():
+#     logout_url = (
+#         f"https://{AUTH0_DOMAIN}/v2/logout?"
+#         f"client_id={AUTH0_CLIENT_ID}&"
+#         f"returnTo={POST_LOGOUT_REDIRECT_URI}&"
+#         f"federated"
+#     )
+#     return RedirectResponse(url=logout_url)
 
 @app.patch("/users/onboarding")
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
@@ -152,7 +156,10 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     validatedBroker = False
 
     if user_type == "client":
-        validatedBroker = bool(register_client(user_obj["user_id"], broker_id))
+        client_id = register_client(user_obj["user_id"], broker_id)
+        client_add_email(client_id, get_email_domain(user_obj["email"]), user_obj["email"])
+        validatedBroker = bool(client_id)
+        
     elif user_type == "broker":
         register_broker(user_obj["user_id"])
         validatedBroker = True
@@ -171,21 +178,18 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
 async def gmail_scan(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    toggle_email_scan(user_obj["user_id"])
 
     state = secrets.token_urlsafe(32)
     oauth_states[state] = {
         "auth0_id": auth0_id,
-        "expires": time.time() + 600  # 10 minutes from now
+        "expires": time.time() + 600
     }
     
     consent_url = get_google_auth_url(state)
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
-async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_current_user), add state
-    # Validate state token
+async def gmail_callback(code: str, state: str):
     state_data = oauth_states.get(state)
     
     if not state_data:
@@ -195,20 +199,18 @@ async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_curre
         del oauth_states[state]
         raise HTTPException(status_code=403, detail="State token expired")
     
-    # Retrieve user from state
     auth0_id = state_data["auth0_id"]
-    del oauth_states[state]  # Delete state (one-time use only)
+    del oauth_states[state]
     
     user_obj = find_user(auth0_id)
-    
+    client = find_client(user_obj["user_id"])
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
-    refresh_token = tokens.get("refresh_token")  # may be None if Google didn’t return it
+    refresh_token = tokens.get("refresh_token")
     
-    # If you use threading:
     threading.Thread(
         target=run_gmail_scan,
-        args=(user_obj["email"], access_token, refresh_token),  # ← pass the 3rd arg
+        args=(client["client_id"], user_obj["email"], access_token, refresh_token),
         daemon=True,
     ).start()
     
@@ -231,7 +233,50 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         profile = find_client(user_obj["user_id"])
         profile_id = profile["client_id"]
         user_type = "client"
-    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_scan": user_obj["email_scan"]}
+    # Need to remove email_scan from frontend
+    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_scan": False}
+
+@app.post("/add/email")
+async def add_email(email: str, user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+
+    client = find_client(user_obj["user_id"])
+    try:
+        domain = get_email_domain(email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    client_add_email(client["client_id"], domain, email)
+    return {"message": "Email added successfully"}
+
+# ------------------------
+# Client Routes
+# ------------------------
+@app.get("/clients/dashboard")
+async def get_client_documents(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    print("this is auth0 id")
+    print(auth0_id)
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    print(emails)
+    headings = get_client_dashboard(client["client_id"], emails)
+    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
+
+@app.post("/clients/category/documents")
+async def get_category_documents(request: dict, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    category = request.get("category")
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    print(emails)
+    return get_client_category_documents(client["client_id"], emails, category)
 
 # ------------------------
 # Broker Routes
@@ -250,7 +295,9 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     claims, _ = user
     client = verify_client(client_id)
     client_user = get_user_from_client(client_id)
-    headings = get_client_dashboard(client_id, client_user["email"])
+    emails = get_client_emails(client_user["client_id"])
+    headings = get_client_dashboard(client_id, emails)
+    print(emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/brokers/client/{client_id}/category/documents")
@@ -261,28 +308,9 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         return {"error": "Access denied"}
     category = request.get("category")
     client_user = get_user_from_client(client_id)
-    return get_client_category_documents(client_id, client_user["email"], category)
-
-# ------------------------
-# Client Routes
-# ------------------------
-@app.get("/clients/dashboard")
-async def get_client_documents(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    headings = get_client_dashboard(client["client_id"], user_obj["email"])
-    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
-
-@app.post("/clients/category/documents")
-async def get_category_documents(request: dict, user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    category = request.get("category")
-    user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    return get_client_category_documents(client["client_id"], user_obj["email"], category)
+    emails = get_client_emails(client_user["client_id"])
+    print(emails)
+    return get_client_category_documents(client_id, emails, category)
 
 # ------------------------
 # Basiq Integration
