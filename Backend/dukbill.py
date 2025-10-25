@@ -156,8 +156,10 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     validatedBroker = False
 
     if user_type == "client":
-        validatedBroker = bool(register_client(user_obj["user_id"], broker_id))
-        # ADD EMAIL TO DB
+        client_id = register_client(user_obj["user_id"], broker_id)
+        client_add_email(client_id, get_email_domain[user_obj["email"]], user_obj["email"])
+        validatedBroker = bool(client_id)
+        
     elif user_type == "broker":
         register_broker(user_obj["user_id"])
         validatedBroker = True
@@ -176,9 +178,6 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
 async def gmail_scan(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-
-    # Add gmail check for client, if does not exist return error
-
 
     state = secrets.token_urlsafe(32)
     oauth_states[state] = {

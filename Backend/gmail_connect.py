@@ -11,6 +11,8 @@ from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES, SEARCH_QUERY
 import urllib.request
 import urllib.error
 
+from helper import get_email_domain
+from users import client_add_email
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -171,17 +173,18 @@ def exchange_code_for_tokens(code: str) -> dict:
     return tokens  # includes 'refresh_token' when Google returns it
 
 # ===== Gmail scan =====
-def run_gmail_scan(user_email: str, access_token: str, refresh_token: Optional[str]) -> None:
+def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_token: Optional[str]) -> None:
     if not CLIENT_ID or not CLIENT_SECRET:
         raise RuntimeError("Missing CLIENT_ID/CLIENT_SECRET")
     if not access_token:
         raise RuntimeError("Missing access token")
 
     thread_ids = list_all_thread_ids(access_token, SEARCH_QUERY, max_results=500)
-    print(f"✅ Found {len(thread_ids)} threads for {user_email}")
     user_email = fetch_authorized_email(access_token) if access_token else None
-    print("this is the users email to be scanned")
-    print(user_email)
+
+    print(f"✅ Found {len(thread_ids)} threads for {user_email}")
+    client_add_email(client_id, get_email_domain(user_email), user_email)
+    
     warnings: List[str] = []
     is_complete = True
     url = "https://z1c3olnck5.execute-api.ap-southeast-2.amazonaws.com/Prod/"
