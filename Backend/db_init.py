@@ -28,7 +28,7 @@ def initialize_database() -> None:
 
             # TEMP: drop tables for clean reset
             print("Deleting existing tables...")
-            cursor.execute("DROP TABLE IF EXISTS client_emails")
+            cursor.execute("DROP TABLE IF EXISTS emails")
             cursor.execute("DROP TABLE IF EXISTS clients")
             cursor.execute("DROP TABLE IF EXISTS brokers")
             cursor.execute("DROP TABLE IF EXISTS users")
@@ -76,7 +76,7 @@ def initialize_database() -> None:
 
             # Create client_emails table
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS client_emails (
+                CREATE TABLE IF NOT EXISTS emails (
                     email_id INT AUTO_INCREMENT PRIMARY KEY,
                     client_id CHAR(6) NOT NULL,
                     domain VARCHAR(255),
