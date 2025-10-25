@@ -258,6 +258,8 @@ async def add_email(email: str, user=Depends(get_current_user)):
 async def get_client_documents(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
+    print("this is auth0 id")
+    print(auth0_id)
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
