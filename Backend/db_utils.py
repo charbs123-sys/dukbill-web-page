@@ -39,12 +39,10 @@ def retrieve_broker(user_id):
     return result
 
 def retrieve_client(user_id):
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM clients WHERE user_id = %s", (user_id,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    with get_connection() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT * FROM clients WHERE user_id = %s", (user_id,))
+            result = cursor.fetchone()
     return result
 
 def get_user_by_client_id(client_id):
@@ -136,7 +134,7 @@ def verify_broker_by_id(broker_id):
 def verify_email_db(client_id, email):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM emails WHERE client_id = %s and email = %s", (client_id, email))
+    cursor.execute("SELECT * FROM emails WHERE client_id = %s and email_address = %s", (client_id, email))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
