@@ -207,9 +207,7 @@ async def gmail_callback(code: str, state: str):
     
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
-    id_token = tokens.get("id_token")
-    
-    print
+    refresh_token = tokens.get("refresh_token")
     
     threading.Thread(
         target=run_gmail_scan,
