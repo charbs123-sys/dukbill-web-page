@@ -5,14 +5,25 @@ from config import DOCUMENT_CATEGORIES
 from fastapi import UploadFile
 import uuid
 
-def get_client_dashboard(client_id, email):
+def get_client_dashboard(client_id, emails):
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
 
-    documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+    all_documents = []
 
+    # Loop through each email returned from get_client_emails()
+    for email_entry in emails:
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+
+        # Load the JSON file for each email
+        documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+        all_documents.extend(documents)
+
+    # --------------------------
+    # Aggregate across all docs
+    # --------------------------
     categories_map = {}
-    for doc in documents:
+    for doc in all_documents:
         category = doc.get("broker_document_category", "Uncategorized")
         for heading, cat_list in DOCUMENT_CATEGORIES.items():
             if category in cat_list:
@@ -24,8 +35,10 @@ def get_client_dashboard(client_id, email):
                 })
                 break
 
-    # Compute missing categories
-    categories_present = set(doc.get("broker_document_category", "Uncategorized") for doc in documents)
+    # Compute which categories are missing
+    categories_present = set(
+        doc.get("broker_document_category", "Uncategorized") for doc in all_documents
+    )
     all_categories = {cat for cat_list in DOCUMENT_CATEGORIES.values() for cat in cat_list}
 
     headings = []
@@ -44,52 +57,64 @@ def get_client_dashboard(client_id, email):
 
     return headings
 
-def get_client_category_documents(client_id, email, category):
+
+def get_client_category_documents(client_id, emails, category):
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
-    
-    documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
-    filtered_docs = []
 
-    hashed_email = hash_email(email)
-    prefix = f"{hashed_email}/categorised/{category}/truncated/"
-    
-    s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-    files = s3_objects.get("Contents", [])
+    all_filtered_docs = []
 
-    threadid_to_keys = {}
+    # Loop through each email record (list of dicts or strings)
+    for email_entry in emails:
+        # Handle both dict and string cases safely
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
 
-    for obj in files:
-        key = obj["Key"]
-        filename = key.split("/")[-1]
+        documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+        filtered_docs = []
+
+        hashed_email = hash_email(email)
+        prefix = f"{hashed_email}/categorised/{category}/truncated/"
+
+        s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+        files = s3_objects.get("Contents", [])
+
+        threadid_to_keys = {}
+
+        for obj in files:
+            key = obj["Key"]
+            filename = key.split("/")[-1]
+            for doc in documents:
+                threadid = doc.get("threadid")
+                if not threadid:
+                    continue
+
+                if filename.startswith(threadid + "_") or filename.startswith(threadid):
+                    threadid_to_keys.setdefault(threadid, []).append(key)
+
         for doc in documents:
-            threadid = doc.get("threadid")
-            if not threadid:
+            if doc.get("broker_document_category", "Uncategorized") != category:
                 continue
-            
-            if filename.startswith(threadid + "_") or filename.startswith(threadid):
-                threadid_to_keys.setdefault(threadid, []).append(key)
 
-    for doc in documents:
-        if doc.get("broker_document_category", "Uncategorized") != category:
-            continue
+            threadid = doc.get("threadid")
+            pdf_keys = threadid_to_keys.get(threadid, [])
+            if not pdf_keys:
+                continue
 
-        threadid = doc.get("threadid")
-        pdf_keys = threadid_to_keys.get(threadid, [])
-        if not pdf_keys:
-            continue
+            urls = [get_cloudfront_url(k) for k in pdf_keys]
 
-        urls = [get_cloudfront_url(k) for k in pdf_keys]
+            filtered_docs.append({
+                "id": doc.get("threadid"),
+                "category": category,
+                "company": doc.get("company", "Unknown"),
+                "amount": parse_amount(doc.get("amount")),
+                "due_date": normalize_date(doc.get("date")),
+                "url": urls,
+            })
 
-        filtered_docs.append({
-            "id": doc.get("threadid"),
-            "category": category,
-            "company": doc.get("company", "Unknown"),
-            "amount": parse_amount(doc.get("amount")),
-            "due_date": normalize_date(doc.get("date")),
-            "url": urls,
-        })
-    return filtered_docs
+        all_filtered_docs.extend(filtered_docs)
+
+    return all_filtered_docs
+
 
 def move_pdfs_to_new_category(email: str, threadid: str, old_category: str, new_category: str):
     hashed_email = hash_email(email)
