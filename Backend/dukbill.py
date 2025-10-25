@@ -36,7 +36,6 @@ class IPv6Adapter(HTTPAdapter):
         self.poolmanager = PoolManager(*args, **kwargs)
 
 def get_user_info_from_auth0(access_token: str):
-    print(access_token)
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
     session = requests.Session()
     #session.mount("https://", IPv6Adapter())  # Force IPv6
@@ -46,8 +45,6 @@ def get_user_info_from_auth0(access_token: str):
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=5
         )
-        print("this is response")
-        print(response.json())
         if response.status_code != 200:
             raise HTTPException(status_code=401, detail="Failed to fetch user profile from Auth0")
         return response.json()
@@ -206,9 +203,6 @@ async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_curre
     refresh_token = tokens.get("refresh_token")  # may be None if Google didn’t return it
 
     id_token = tokens.get("id_token")
-    print("/////////////////////////////")
-    print(id_token)
-    print("/////////////////////////////")
     
     # If you use threading:
     threading.Thread(
