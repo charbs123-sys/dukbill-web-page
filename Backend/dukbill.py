@@ -261,6 +261,7 @@ async def get_client_documents(user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
+    print(emails)
     headings = get_client_dashboard(client["client_id"], emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
@@ -272,6 +273,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
+    print(emails)
     return get_client_category_documents(client["client_id"], emails, category)
 
 # ------------------------
@@ -293,6 +295,7 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_user["client_id"])
     headings = get_client_dashboard(client_id, emails)
+    print(emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/brokers/client/{client_id}/category/documents")
@@ -304,6 +307,7 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     category = request.get("category")
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_user["client_id"])
+    print(emails)
     return get_client_category_documents(client_id, emails, category)
 
 # ------------------------
