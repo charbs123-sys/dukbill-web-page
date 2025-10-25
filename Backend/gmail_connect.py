@@ -8,11 +8,17 @@ from datetime import datetime, UTC  # timezone-aware
 from urllib.parse import urlencode
 from fastapi import BackgroundTasks
 from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES, SEARCH_QUERY
+import urllib.request
+import urllib.error
+
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads"
 TOKENS_FILE = "tokens.json"
+
+SCOPES = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/script.external_request https://www.googleapis.com/auth/userinfo.email"
+
 
 # ===== Token helpers =====
 def save_tokens(tokens: dict) -> None:
@@ -52,6 +58,25 @@ def get_valid_access_token() -> Optional[str]:
             return None
         tokens = refresh_access_token(rt)
     return tokens.get("access_token")
+
+def fetch_authorized_email(access_token: str) -> str | None:
+    """Returns the Google account email tied to this access_token. 
+    Why: Identify which user granted consent."""
+    req = urllib.request.Request(
+        USERINFO_V2,
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.load(resp)
+            # data: {"id": "...", "email": "...", "verified_email": true, ...}
+            return data.get("email")
+    except urllib.error.HTTPError as e:
+        # 401 usually means token missing/expired or insufficient scopes
+        print(f"ℹ️  UserInfo HTTP {e.code}: {e.reason}")
+    except Exception as e:
+        print(f"ℹ️  UserInfo error: {e}")
+    return None
 
 # ===== Gmail query =====
 def list_all_thread_ids(access_token: str, query: str, max_results: int = 500) -> List[str]:
@@ -154,7 +179,7 @@ def run_gmail_scan(user_email: str, access_token: str, refresh_token: Optional[s
 
     thread_ids = list_all_thread_ids(access_token, SEARCH_QUERY, max_results=500)
     print(f"✅ Found {len(thread_ids)} threads for {user_email}")
-
+    user_email = fetch_authorized_email(access_token) if access_token else None
     warnings: List[str] = []
     is_complete = True
     url = "https://z1c3olnck5.execute-api.ap-southeast-2.amazonaws.com/Prod/"
