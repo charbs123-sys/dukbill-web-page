@@ -191,7 +191,11 @@ async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_curre
     print("////////////////////////////////////////////")
     print(state_data)
     print("////////////////////////////////////////////")
-    
+    print(state)
+    print("////////////////////////////////////////////")
+    print(code)
+    print("////////////////////////////////////////////")
+
     if not state_data:
         raise HTTPException(status_code=403, detail="Invalid or expired state token")
     
