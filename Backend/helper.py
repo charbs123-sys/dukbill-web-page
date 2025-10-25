@@ -4,12 +4,7 @@ import phonenumbers
 import io
 
 def parse_amount(amount):
-    """
-    Safely converts an amount to float.
-    Works if amount is a string with $/comma or a number.
-    """
     if isinstance(amount, str):
-        # Remove $ and commas if present
         cleaned = amount.replace("$", "").replace(",", "")
         try:
             return float(cleaned)
@@ -46,4 +41,10 @@ def truncate_pdf(file_bytes: bytes) -> bytes:
         output = io.BytesIO()
         writer.write(output)
         return output.getvalue()
-    return b''  # empty PDF if no pages
+    return b''
+
+def get_email_domain(email: str):
+    try:
+        return email.split("@")[1]
+    except IndexError:
+        raise ValueError(f"Invalid email address: {email}")
