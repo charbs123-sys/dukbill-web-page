@@ -157,7 +157,7 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
 
     if user_type == "client":
         client_id = register_client(user_obj["user_id"], broker_id)
-        client_add_email(client_id, get_email_domain[user_obj["email"]], user_obj["email"])
+        client_add_email(client_id, get_email_domain(user_obj["email"]), user_obj["email"])
         validatedBroker = bool(client_id)
         
     elif user_type == "broker":
