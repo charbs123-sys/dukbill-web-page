@@ -134,7 +134,10 @@ def verify_broker_by_id(broker_id):
 def verify_email_db(client_id, email):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM emails WHERE client_id = %s and email_address = %s", (client_id, email))
+    cursor.execute(
+        "SELECT * FROM emails WHERE client_id = %s and email_address = %s",
+        (client_id, email)
+    )
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -270,25 +273,20 @@ def get_clients_for_broker(broker_id):
 # ------------------------
 #  Email
 # ------------------------
-def add_email_db(client_id, domain, email):  
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute(
-        "INSERT INTO emails (client_id, domain, email_address) VALUES (%s, %s, %s)",
-        (client_id, domain, email)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return 
+def add_email_db(client_id, domain, email):
+    with get_connection() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "INSERT INTO emails (client_id, domain, email_address) VALUES (%s, %s, %s)",
+                (client_id, domain, email)
+            )
+        conn.commit()
 
 def get_client_emails_db(client_id):
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT email_address FROM emails WHERE client_id = %s", (client_id,))
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    with get_connection() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT email_address FROM emails WHERE client_id = %s", (client_id,))
+            results = cursor.fetchall()
     return results
 
 # ------------------------

@@ -85,9 +85,18 @@ def get_broker_clients(broker_id):
 #  Emails
 # ------------------------
 def client_add_email(client_id, domain, email):
-    if verify_client(client_id) and verify_email(client_id, email):
-        return add_email_db(client_id, domain, email)
-    
+    if not verify_client(client_id):
+        return False
+
+    try:
+        add_email_db(client_id, domain, email)
+        return True
+    except mysql.connector.errors.IntegrityError:
+        # Duplicate email for this client, ignore
+        return False
+    except Exception as e:
+        print(f"Failed to add email {email}: {e}")
+        return False
 # ------------------------
 #  Basiq
 # ------------------------

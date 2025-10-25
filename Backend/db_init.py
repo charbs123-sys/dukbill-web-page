@@ -27,12 +27,12 @@ def initialize_database() -> None:
             cursor.execute(f"USE `{db_name}`")
 
             # TEMP: drop tables for clean reset
-            # print("Deleting existing tables...")
-            # cursor.execute("DROP TABLE IF EXISTS emails")
-            # cursor.execute("DROP TABLE IF EXISTS clients")
-            # cursor.execute("DROP TABLE IF EXISTS brokers")
-            # cursor.execute("DROP TABLE IF EXISTS users")
-            # print("Tables deleted.")
+            print("Deleting existing tables...")
+            cursor.execute("DROP TABLE IF EXISTS emails")
+            cursor.execute("DROP TABLE IF EXISTS clients")
+            cursor.execute("DROP TABLE IF EXISTS brokers")
+            cursor.execute("DROP TABLE IF EXISTS users")
+            print("Tables deleted.")
 
             # Create users table
             cursor.execute("""
