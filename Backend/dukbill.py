@@ -203,14 +203,14 @@ async def gmail_callback(code: str, state: str):
     del oauth_states[state]
     
     user_obj = find_user(auth0_id)
-    
+    client = find_client(user_obj["user_id"])
     tokens = exchange_code_for_tokens(code)
     access_token = tokens.get("access_token")
     refresh_token = tokens.get("refresh_token")
     
     threading.Thread(
         target=run_gmail_scan,
-        args=(user_obj["email"], access_token, refresh_token),
+        args=(client["client_id"], user_obj["email"], access_token, refresh_token),
         daemon=True,
     ).start()
     
