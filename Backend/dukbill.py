@@ -140,7 +140,7 @@ async def user_email_authentication(user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
     print(profile)
-    return profile["email_verified"]
+    return {"email_verified": profile["email_verified"]}
 
 # @app.get("/auth/logout")
 # async def logout():
