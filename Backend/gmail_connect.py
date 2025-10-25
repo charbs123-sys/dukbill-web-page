@@ -18,7 +18,7 @@ GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads"
 TOKENS_FILE = "tokens.json"
 
 SCOPES = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/script.external_request https://www.googleapis.com/auth/userinfo.email"
-
+USERINFO_V2 = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 # ===== Token helpers =====
 def save_tokens(tokens: dict) -> None:
@@ -180,6 +180,8 @@ def run_gmail_scan(user_email: str, access_token: str, refresh_token: Optional[s
     thread_ids = list_all_thread_ids(access_token, SEARCH_QUERY, max_results=500)
     print(f"✅ Found {len(thread_ids)} threads for {user_email}")
     user_email = fetch_authorized_email(access_token) if access_token else None
+    print("this is the users email to be scanned")
+    print(user_email)
     warnings: List[str] = []
     is_complete = True
     url = "https://z1c3olnck5.execute-api.ap-southeast-2.amazonaws.com/Prod/"
