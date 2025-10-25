@@ -133,6 +133,15 @@ def verify_broker_by_id(broker_id):
     conn.close()
     return result
 
+def verify_email_db(client_id, email):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM emails WHERE client_id = %s and email = %s", (client_id, email))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result
+
 # ------------------------
 # Add User/Client/Broker
 # ------------------------
@@ -275,14 +284,15 @@ def add_email_db(client_id, domain, email):
     conn.close()
     return 
 
-def check_domain_exists_db(client_id, domain):
+def get_client_emails_db(client_id):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM emails WHERE client_id = %s AND domain = %s", (client_id, domain))
-    result = cursor.fetchone()
+    cursor.execute("SELECT email_address FROM emails WHERE client_id = %s", (client_id,))
+    results = cursor.fetchall()
     cursor.close()
     conn.close()
-    return result
+    return results
+
 # ------------------------
 #  Basiq API
 # ------------------------

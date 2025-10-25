@@ -20,7 +20,7 @@ def get_user_from_client(client_id):
     return get_user_by_client_id(client_id)
 
 # ------------------------
-# Verify User/Client/Broker
+# Verify User/Client/Broker/Email
 # ------------------------
 def verify_user(user_id):
     return verify_user_by_id(user_id)
@@ -30,6 +30,9 @@ def verify_broker(broker_id):
 
 def verify_client(client_id):
     return verify_client_by_id(client_id)
+
+def verify_email(client_id, email):
+    return verify_email_db(client_id, email)
 
 # ------------------------
 # Register User/Client/Broker
@@ -66,9 +69,11 @@ def update_profile(auth0_id: str, profile_data: dict):
 def toggle_broker_access(client_id):
     if not verify_client(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
-
     toggle_broker_access_db(client_id)
 
+def get_client_emails(client_id):
+    if verify_client(client_id):
+        return get_client_emails_db(client_id)
 # ------------------------
 #  Broker
 # ------------------------
@@ -80,12 +85,9 @@ def get_broker_clients(broker_id):
 #  Emails
 # ------------------------
 def client_add_email(client_id, domain, email):
-    if verify_client(client_id):
+    if verify_client(client_id) and verify_email(client_id, email):
         return add_email_db(client_id, domain, email)
     
-def check_domain_exists(client_id, domain):
-    if verify_client(client_id):
-        return check_domain_exists_db(client_id, domain)
 # ------------------------
 #  Basiq
 # ------------------------
