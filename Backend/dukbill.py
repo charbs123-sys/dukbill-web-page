@@ -188,9 +188,9 @@ async def gmail_scan(user=Depends(get_current_user)):
 async def gmail_callback(code: str, state: str):  # ← Remove Depends(get_current_user), add state
     # Validate state token
     state_data = oauth_states.get(state)
-    print("////////////////////////////////////////////)
+    print("////////////////////////////////////////////")
     print(state_data)
-    print("////////////////////////////////////////////)
+    print("////////////////////////////////////////////")
     
     if not state_data:
         raise HTTPException(status_code=403, detail="Invalid or expired state token")
