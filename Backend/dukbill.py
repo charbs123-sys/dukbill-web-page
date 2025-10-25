@@ -54,6 +54,7 @@ def get_user_info_from_auth0(access_token: str):
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Auth0 request failed: {str(e)}")
 
+
 # ------------------------
 # FastAPI App Initialization
 # ------------------------
