@@ -63,3 +63,25 @@ def save_json_file(hashed_email, endpoint, data):
         raise HTTPException(status_code=500, detail=f"Error saving '{key}' to S3: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error saving '{key}': {e}")
+    
+def ensure_json_file_exists(hashed_email: str, endpoint: str) -> None:
+    """
+    Ensures that the JSON file exists in S3. If it does not exist, creates it as an empty JSON array.
+    """
+    key = hashed_email + endpoint
+    try:
+        s3.head_object(Bucket=bucket_name, Key=key)
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code")
+        if error_code == "404":
+            empty_data = json.dumps([]).encode("utf-8")
+            compressed_data = gzip.compress(empty_data)
+            s3.put_object(
+                Bucket=bucket_name,
+                Key=key,
+                Body=compressed_data,
+                ContentType="application/json",
+                ContentEncoding="gzip",
+            )
+        else:
+            raise HTTPException(status_code=500, detail=f"Unexpected S3 error checking '{key}': {e}")

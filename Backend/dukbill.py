@@ -391,7 +391,6 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 @app.post("/edit/document/card")
 async def edit_client_document_endpoint(
     updates: dict = Body(...),
-    hashed_email: str = Body(..., embed=True),
     user=Depends(get_current_user)
 ):
     claims, _ = user
@@ -400,24 +399,28 @@ async def edit_client_document_endpoint(
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
+    hashed_email = updates.pop("hashed_email", None)
+    if not hashed_email:
+        raise HTTPException(status_code=400, detail="Missing hashed_email")
+
     edit_client_document(hashed_email, updates)
     return {"status": "success"}
-
 
 @app.delete("/delete/document/card")
 async def delete_client_document_endpoint(
     request: Request,
     user=Depends(get_current_user)
 ):
-    data = await request.json()
-    threadid = data.get("id")
-    hashed_email = data.get("hashed_email")
-
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
+
+    threadid = request.get("id")
+    hashed_email = request.get("hashed_email")
+    if not threadid or not hashed_email:
+        raise HTTPException(status_code=400, detail="Missing id or hashed_email")
 
     delete_client_document(hashed_email, threadid)
     return {"status": "success"}
