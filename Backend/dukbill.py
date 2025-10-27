@@ -140,7 +140,6 @@ async def register(user=Depends(get_current_user)):
 async def user_email_authentication(user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
-    print(profile)
     return {"email_verified": profile["email_verified"]}
 
 # @app.get("/auth/logout")
@@ -266,12 +265,9 @@ async def add_email(email: str, user=Depends(get_current_user)):
 async def get_client_documents(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-    print("this is auth0 id")
-    print(auth0_id)
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
-    print(emails)
     headings = get_client_dashboard(client["client_id"], emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
@@ -283,7 +279,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
-    print(emails)
+
     return get_client_category_documents(client["client_id"], emails, category)
 
 @app.post("/broker/access")
@@ -314,11 +310,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     claims, _ = user
     client = verify_client(client_id)
     client_user = get_user_from_client(client_id)
-    print("this is client user")
-    print(client_user)
     emails = get_client_emails(client_id)
     headings = get_client_dashboard(client_id, emails)
-    print(emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/brokers/client/{client_id}/category/documents")
@@ -330,9 +323,7 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     category = request.get("category")
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
-    print(emails)
     return get_client_category_documents(client_id, emails, category)
-
 
 @app.get("/brokers/client/{client_id}/documents/download")
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
@@ -398,26 +389,37 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 # Document Routes
 # ------------------------
 @app.post("/edit/document/card")
-async def edit_client_document_endpoint(updates: dict = Body(...), user=Depends(get_current_user)):
+async def edit_client_document_endpoint(
+    updates: dict = Body(...),
+    hashed_email: str = Body(..., embed=True),
+    user=Depends(get_current_user)
+):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-    email = user_obj["email"]
-    edit_client_document(email, updates)
+
+    edit_client_document(hashed_email, updates)
     return {"status": "success"}
 
+
 @app.delete("/delete/document/card")
-async def delete_client_document_endpoint(request: Request, user=Depends(get_current_user)):
+async def delete_client_document_endpoint(
+    request: Request,
+    user=Depends(get_current_user)
+):
     data = await request.json()
     threadid = data.get("id")
+    hashed_email = data.get("hashed_email")
+
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-    delete_client_document(user_obj["email"], threadid)
+
+    delete_client_document(hashed_email, threadid)
     return {"status": "success"}
 
 @app.post("/upload/document/card")

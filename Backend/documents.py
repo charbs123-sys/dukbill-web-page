@@ -16,12 +16,14 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
 
     for email_entry in emails:
         email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
 
         try:
-            documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+            documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+            for doc in documents:
+                doc["hashed_email"] = hashed_email
             all_documents.extend(documents)
         except HTTPException:
-            # Skip missing or corrupted JSON for this email
             continue
 
     categories_map = {}
@@ -34,6 +36,7 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
                     "company_name": doc.get("company", "Unknown"),
                     "payment_amount": parse_amount(doc.get("amount")),
                     "due_date": normalize_date(doc.get("date")),
+                    "hashed_email": doc.get("hashed_email"),
                 })
                 break
 
@@ -52,7 +55,6 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
             "categories": categories,
             "missing_categories": missing
         })
-
     return headings
 
 
@@ -67,12 +69,13 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
 
     for email_entry in emails:
         email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
+
         try:
-            documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+            documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
         except HTTPException:
             continue
 
-        hashed_email = hash_email(email)
         prefix = f"{hashed_email}/categorised/{category}/truncated/"
 
         s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
@@ -106,16 +109,15 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
                 "amount": parse_amount(doc.get("amount")),
                 "due_date": normalize_date(doc.get("date")),
                 "url": urls,
+                "hashed_email": hashed_email,
             })
-
     return all_filtered_docs
 
 
-def move_pdfs_to_new_category(email: str, threadid: str, old_category: str, new_category: str) -> None:
+def move_pdfs_to_new_category(hashed_email: str, threadid: str, old_category: str, new_category: str) -> None:
     """
     Moves PDFs from an old category folder to a new category folder in S3.
     """
-    hashed_email = hash_email(email)
     folders = ["pdfs", "truncated"]
 
     for folder in folders:
@@ -134,7 +136,7 @@ def move_pdfs_to_new_category(email: str, threadid: str, old_category: str, new_
                 s3.delete_object(Bucket=bucket_name, Key=key)
 
 
-def edit_client_document(client_email: str, update_data: dict) -> dict:
+def edit_client_document(hashed_email: str, update_data: dict) -> dict:
     """
     Edits a client document metadata and moves PDFs if category changes.
     """
@@ -142,7 +144,7 @@ def edit_client_document(client_email: str, update_data: dict) -> dict:
     if not card_id:
         raise HTTPException(status_code=400, detail="Missing document id")
 
-    documents = get_json_file(client_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == card_id), None)
     if doc_index is None:
@@ -171,52 +173,57 @@ def edit_client_document(client_email: str, update_data: dict) -> dict:
             else:
                 documents[doc_index][json_field] = value
 
-    save_json_file(client_email, "/broker_anonymized/emails_anonymized.json", documents)
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
 
     new_category = documents[doc_index].get("broker_document_category")
     if old_category != new_category:
-        move_pdfs_to_new_category(client_email, card_id, old_category, new_category)
+        move_pdfs_to_new_category(hashed_email, card_id, old_category, new_category)
 
     return documents[doc_index]
 
 
-def delete_client_document(client_email: str, threadid: str) -> None:
+def delete_client_document(hashed_email: str, threadid: str) -> None:
     """
     Deletes a client document metadata and associated PDFs in S3.
     """
     if not threadid:
         raise HTTPException(status_code=400, detail="Missing threadid")
 
-    documents = get_json_file(client_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == threadid), None)
     if doc_index is None:
         raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
 
     doc_to_delete = documents.pop(doc_index)
-    save_json_file(client_email, "/broker_anonymized/emails_anonymized.json", documents)
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
 
     category = doc_to_delete.get("broker_document_category", "Uncategorized")
-    hashed_email = hash_email(client_email)
-    prefix = f"{hashed_email}/categorised/{category}/pdfs/"
+    hashed_email = hash_email(hashed_email)
 
-    s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-    files = s3_objects.get("Contents", [])
+    prefixes = [
+        f"{hashed_email}/categorised/{category}/pdfs/",
+        f"{hashed_email}/categorised/{category}/truncated/",
+    ]
 
-    for obj in files:
-        key = obj["Key"]
-        filename = key.split("/")[-1]
-        if filename.startswith(threadid + "_") or filename.startswith(threadid):
-            s3.delete_object(Bucket=bucket_name, Key=key)
+    for prefix in prefixes:
+        s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+        files = s3_objects.get("Contents", [])
+
+        for obj in files:
+            key = obj["Key"]
+            filename = key.split("/")[-1]
+            if filename.startswith(threadid + "_") or filename.startswith(threadid):
+                s3.delete_object(Bucket=bucket_name, Key=key)
 
 
-async def upload_client_document(email: str, category: str, company: str, amount: float, date: str, file: UploadFile) -> dict:
+async def upload_client_document(client_email: str, category: str, company: str, amount: float, date: str, file: UploadFile) -> dict:
     """
     Uploads a new client document to S3 and updates the JSON metadata.
     """
-    documents = get_json_file(email, "/broker_anonymized/emails_anonymized.json")
+    hashed_email = hash_email(client_email)
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     threadid = str(uuid.uuid4())
-    hashed_email = hash_email(email)
     filename = f"{threadid}_1_{file.filename}"
     s3_key = f"{hashed_email}/categorised/{category}/pdfs/{filename}"
 
@@ -241,6 +248,6 @@ async def upload_client_document(email: str, category: str, company: str, amount
         "uploaded_at": datetime.utcnow().isoformat()
     }
     documents.append(new_doc)
-    save_json_file(email, "/broker_anonymized/emails_anonymized.json", documents)
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
 
     return new_doc
