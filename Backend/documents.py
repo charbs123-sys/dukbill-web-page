@@ -218,27 +218,27 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
 
 async def upload_client_document(client_email: str, category: str, company: str, amount: float, date: str, file: UploadFile) -> dict:
     """
-    Uploads a new client document to S3 and updates the JSON metadata.
+    Uploads a new client document to S3 (full PDF and truncated first page)
+    and updates the JSON metadata file. Ensures metadata file exists.
     """
     hashed_email = hash_email(client_email)
+
+    ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
     documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     threadid = str(uuid.uuid4())
     filename = f"{threadid}_1_{file.filename}"
-    s3_key = f"{hashed_email}/categorised/{category}/pdfs/{filename}"
+    pdf_key = f"{hashed_email}/categorised/{category}/pdfs/{filename}"
+    truncated_key = f"{hashed_email}/categorised/{category}/truncated/{filename}"
 
     file_bytes = await file.read()
 
-    # Upload full PDF
-    s3.upload_fileobj(io.BytesIO(file_bytes), bucket_name, s3_key, ExtraArgs={"ContentType": "application/pdf"})
+    s3.upload_fileobj(io.BytesIO(file_bytes), bucket_name, pdf_key, ExtraArgs={"ContentType": "application/pdf"})
 
-    # Upload truncated PDF (first page)
     truncated_bytes = truncate_pdf(file_bytes)
     if truncated_bytes:
-        truncated_key = f"{hashed_email}/categorised/{category}/truncated/{filename}"
         s3.upload_fileobj(io.BytesIO(truncated_bytes), bucket_name, truncated_key, ExtraArgs={"ContentType": "application/pdf"})
 
-    # Save metadata
     new_doc = {
         "threadid": threadid,
         "broker_document_category": category,
@@ -248,6 +248,7 @@ async def upload_client_document(client_email: str, category: str, company: str,
         "uploaded_at": datetime.utcnow().isoformat()
     }
     documents.append(new_doc)
+
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
 
     return new_doc
