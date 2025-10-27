@@ -325,7 +325,6 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     emails = get_client_emails(client_id)
     return get_client_category_documents(client_id, emails, category)
 
-
 @app.get("/brokers/client/{client_id}/documents/download")
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
     client = verify_client(client_id)
