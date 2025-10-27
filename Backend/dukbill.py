@@ -13,6 +13,7 @@ from db_init import initialize_database
 from config import AUTH0_DOMAIN
 from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
+from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -20,7 +21,7 @@ from urllib3.poolmanager import PoolManager
 import socket
 import threading
 import os
-
+from typing import List, Dict, Any
 import secrets
 import time
 oauth_states = {}
@@ -331,6 +332,22 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     emails = get_client_emails(client_id)
     print(emails)
     return get_client_category_documents(client_id, emails, category)
+
+
+@app.get("/brokers/client/{client_id}/documents/download")
+async def download_client_documents(client_id: int, user=Depends(get_current_user)):
+    client = verify_client(client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    if not client.get("brokerAccess"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    email = _first_email(get_client_emails(client_id))
+    result = _invoke_zip_lambda_for(email)  # {"zip_key":..., "presigned_url":..., ...}
+    zip_key = result["zip_key"]
+    filename = f"client_{client_id}_documents.zip"
+    return _stream_s3_zip(zip_key, filename)
+
 
 # ------------------------
 # Basiq Integration
