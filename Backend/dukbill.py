@@ -313,6 +313,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     claims, _ = user
     client = verify_client(client_id)
     client_user = get_user_from_client(client_id)
+    print("this is client user")
+    print(client_user)
     emails = get_client_emails(client_user["client_id"])
     headings = get_client_dashboard(client_id, emails)
     print(emails)
