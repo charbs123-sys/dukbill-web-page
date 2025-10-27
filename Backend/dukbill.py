@@ -285,6 +285,17 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     print(emails)
     return get_client_category_documents(client["client_id"], emails, category)
 
+@app.post("/broker/access")
+async def toggle_broker_access_route(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    
+    user = find_user(auth0_id)
+    client = find_client(user["user_id"])
+    
+    toggle_broker_access(client["client_id"])
+    return {"BrokerAccess": not client["brokerAccess"]}
+
 # ------------------------
 # Broker Routes
 # ------------------------
