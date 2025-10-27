@@ -20,7 +20,6 @@ def verify_token(token: str):
     Returns None if verification fails.
     """
     try:
-        print(f"[AUTH] Attempting to verify Auth0 token...")
         # Get signing key from JWT
         signing_key = jwks_client.get_signing_key_from_jwt(token).key
 
@@ -32,11 +31,9 @@ def verify_token(token: str):
             audience=AUTH0_AUDIENCE
         )
 
-        print(f"[AUTH] Token verified successfully for user: {payload.get('sub')}")
         return payload
 
     except Exception as e:
-        print(f"[AUTH] Auth0 token verification failed: {e}")
         import traceback
         traceback.print_exc()
         return None

@@ -1,6 +1,7 @@
 from datetime import datetime
 from pypdf import PdfReader, PdfWriter
 import phonenumbers
+import hashlib
 import io
 
 def parse_amount(amount):
@@ -48,3 +49,6 @@ def get_email_domain(email: str):
         return email.split("@")[1]
     except IndexError:
         raise ValueError(f"Invalid email address: {email}")
+    
+def hash_email(email):
+    return hashlib.sha256(email.encode('utf-8')).hexdigest()
