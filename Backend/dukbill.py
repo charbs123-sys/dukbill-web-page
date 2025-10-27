@@ -315,7 +315,7 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     client_user = get_user_from_client(client_id)
     print("this is client user")
     print(client_user)
-    emails = get_client_emails(client_user["client_id"])
+    emails = get_client_emails(client_id)
     headings = get_client_dashboard(client_id, emails)
     print(emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
@@ -328,7 +328,7 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         return {"error": "Access denied"}
     category = request.get("category")
     client_user = get_user_from_client(client_id)
-    emails = get_client_emails(client_user["client_id"])
+    emails = get_client_emails(client_id)
     print(emails)
     return get_client_category_documents(client_id, emails, category)
 
