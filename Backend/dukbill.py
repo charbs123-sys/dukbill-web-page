@@ -417,8 +417,10 @@ async def delete_client_document_endpoint(
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
-    threadid = request.get("id")
-    hashed_email = request.get("hashed_email")
+    data = await request.json()
+    threadid = data.get("id")
+    hashed_email = data.get("hashed_email")
+
     if not threadid or not hashed_email:
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
 
