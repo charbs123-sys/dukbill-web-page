@@ -25,7 +25,7 @@ def initialize_database() -> None:
             # Create database if it doesn't exist
             cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`")
             cursor.execute(f"USE `{db_name}`")
-
+            '''
             # TEMP: drop tables for clean reset
             print("Deleting existing tables...")
             cursor.execute("DROP TABLE IF EXISTS emails")
@@ -33,7 +33,7 @@ def initialize_database() -> None:
             cursor.execute("DROP TABLE IF EXISTS brokers")
             cursor.execute("DROP TABLE IF EXISTS users")
             print("Tables deleted.")
-
+            '''
             # Create users table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
