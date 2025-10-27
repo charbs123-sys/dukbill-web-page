@@ -328,7 +328,7 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         return {"error": "Access denied"}
     category = request.get("category")
     client_user = get_user_from_client(client_id)
-    emails = get_client_emails(client_user["client_id"])
+    emails = get_client_emails(client_id)
     print(emails)
     return get_client_category_documents(client_id, emails, category)
 
