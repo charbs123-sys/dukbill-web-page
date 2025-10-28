@@ -66,6 +66,7 @@ def initialize_database() -> None:
                     client_id CHAR(6) PRIMARY KEY,
                     user_id INT NOT NULL,
                     broker_id CHAR(6) NOT NULL,
+                    broker_verify BOOLEAN NOT NULL DEFAULT FALSE,
                     brokerAccess BOOLEAN NOT NULL DEFAULT FALSE,
                     CONSTRAINT fk_clients_user
                         FOREIGN KEY (user_id) REFERENCES users(user_id),

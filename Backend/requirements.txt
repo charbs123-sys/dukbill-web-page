@@ -13,3 +13,4 @@ boto3
 phonenumbers
 python-multipart
 pypdf
+redis

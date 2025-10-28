@@ -4,6 +4,11 @@ from helper import *
 from config import DOCUMENT_CATEGORIES
 from fastapi import UploadFile
 import uuid
+from redis_utils import (
+    get_or_load_emails_json, 
+    save_emails_json_to_cache,  # NEW - write-back
+    force_sync_to_s3  # NEW - for critical operations
+)
 
 def get_client_dashboard(client_id: str, emails: list) -> list:
     """
@@ -19,7 +24,7 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
         hashed_email = hash_email(email)
 
         try:
-            documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+            documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
             for doc in documents:
                 doc["hashed_email"] = hashed_email
             all_documents.extend(documents)
@@ -72,7 +77,7 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
         hashed_email = hash_email(email)
 
         try:
-            documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+            documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
         except HTTPException:
             continue
 
@@ -144,7 +149,7 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
     if not card_id:
         raise HTTPException(status_code=400, detail="Missing document id")
 
-    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == card_id), None)
     if doc_index is None:
@@ -173,7 +178,7 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
             else:
                 documents[doc_index][json_field] = value
 
-    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+    save_emails_json_to_cache(hashed_email, documents)
 
     new_category = documents[doc_index].get("broker_document_category")
     if old_category != new_category:
@@ -189,13 +194,13 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
     if not threadid:
         raise HTTPException(status_code=400, detail="Missing threadid")
 
-    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
     doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == threadid), None)
     if doc_index is None:
         raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
 
     doc_to_delete = documents.pop(doc_index)
-    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+    save_emails_json_to_cache(hashed_email, documents)
 
     category = doc_to_delete.get("broker_document_category", "Uncategorized")
     hashed_email = hash_email(hashed_email)
@@ -224,7 +229,7 @@ async def upload_client_document(client_email: str, category: str, company: str,
     hashed_email = hash_email(client_email)
 
     ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
-    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     threadid = str(uuid.uuid4())
     filename = f"{threadid}_1_{file.filename}"
@@ -248,7 +253,7 @@ async def upload_client_document(client_email: str, category: str, company: str,
         "uploaded_at": datetime.utcnow().isoformat()
     }
     documents.append(new_doc)
-
-    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+    
+    save_emails_json_to_cache(hashed_email, documents)
 
     return new_doc

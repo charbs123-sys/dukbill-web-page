@@ -258,6 +258,7 @@ def get_clients_for_broker(broker_id):
         c.client_id AS id,
         u.name,
         u.picture,
+        c.broker_verify,
         c.brokerAccess
     FROM clients c
     JOIN users u ON c.user_id = u.user_id
@@ -269,6 +270,18 @@ def get_clients_for_broker(broker_id):
     cursor.close()
     conn.close()
     return clients
+
+def toggle_client_verify_db(client_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE clients SET broker_verify = NOT broker_verify WHERE client_id = %s",
+        (client_id,)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 
 # ------------------------
 #  Email
