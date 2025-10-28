@@ -81,6 +81,11 @@ def get_broker_clients(broker_id):
     if verify_broker(broker_id):
         return get_clients_for_broker(broker_id)
 
+def toggle_client_verification(client_id):
+    if not verify_client(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+    toggle_client_verify_db(client_id)
+
 # ------------------------
 #  Emails
 # ------------------------

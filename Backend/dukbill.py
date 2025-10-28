@@ -13,6 +13,7 @@ from db_init import initialize_database
 from config import AUTH0_DOMAIN
 from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
+from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -20,7 +21,7 @@ from urllib3.poolmanager import PoolManager
 import socket
 import threading
 import os
-
+from typing import List, Dict, Any
 import secrets
 import time
 oauth_states = {}
@@ -139,7 +140,6 @@ async def register(user=Depends(get_current_user)):
 async def user_email_authentication(user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
-    print(profile)
     return {"email_verified": profile["email_verified"]}
 
 # @app.get("/auth/logout")
@@ -265,12 +265,9 @@ async def add_email(email: str, user=Depends(get_current_user)):
 async def get_client_documents(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-    print("this is auth0 id")
-    print(auth0_id)
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
-    print(emails)
     headings = get_client_dashboard(client["client_id"], emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
@@ -282,7 +279,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
-    print(emails)
+
     return get_client_category_documents(client["client_id"], emails, category)
 
 @app.post("/broker/access")
@@ -313,11 +310,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     claims, _ = user
     client = verify_client(client_id)
     client_user = get_user_from_client(client_id)
-    print("this is client user")
-    print(client_user)
     emails = get_client_emails(client_id)
     headings = get_client_dashboard(client_id, emails)
-    print(emails)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/brokers/client/{client_id}/category/documents")
@@ -329,9 +323,29 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     category = request.get("category")
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
-    print(emails)
     return get_client_category_documents(client_id, emails, category)
 
+@app.get("/brokers/client/{client_id}/documents/download")
+async def download_client_documents(client_id: int, user=Depends(get_current_user)):
+    client = verify_client(client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    if not client.get("brokerAccess"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    email = _first_email(get_client_emails(client_id))
+    result = _invoke_zip_lambda_for(email)  # {"zip_key":..., "presigned_url":..., ...}
+    zip_key = result["zip_key"]
+    filename = f"client_{client_id}_documents.zip"
+    return _stream_s3_zip(zip_key, filename)
+
+@app.post("/brokers/client/{client_id}/verify")
+async def verify_client_documents(client_id: int, user=Depends(get_current_user)):
+    toggle_client_verification(client_id)
+    client = verify_client(client_id)
+    print(client)
+    print(type(client["broker_verify"]))
+    return {"broker_verify": client["broker_verify"]}
 # ------------------------
 # Basiq Integration
 # ------------------------
@@ -381,26 +395,42 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 # Document Routes
 # ------------------------
 @app.post("/edit/document/card")
-async def edit_client_document_endpoint(updates: dict = Body(...), user=Depends(get_current_user)):
+async def edit_client_document_endpoint(
+    updates: dict = Body(...),
+    user=Depends(get_current_user)
+):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-    email = user_obj["email"]
-    edit_client_document(email, updates)
+
+    hashed_email = updates.pop("hashed_email", None)
+    if not hashed_email:
+        raise HTTPException(status_code=400, detail="Missing hashed_email")
+
+    edit_client_document(hashed_email, updates)
     return {"status": "success"}
 
 @app.delete("/delete/document/card")
-async def delete_client_document_endpoint(request: Request, user=Depends(get_current_user)):
-    data = await request.json()
-    threadid = data.get("id")
+async def delete_client_document_endpoint(
+    request: Request,
+    user=Depends(get_current_user)
+):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-    delete_client_document(user_obj["email"], threadid)
+
+    data = await request.json()
+    threadid = data.get("id")
+    hashed_email = data.get("hashed_email")
+
+    if not threadid or not hashed_email:
+        raise HTTPException(status_code=400, detail="Missing id or hashed_email")
+
+    delete_client_document(hashed_email, threadid)
     return {"status": "success"}
 
 @app.post("/upload/document/card")
@@ -468,133 +498,6 @@ async def debug_network():
     return results
 '''
 # ------------------------
-<<<<<<< HEAD
-# Internet/NAT connectivity check
-# ------------------------
-@app.get("/internet/check")
-async def check_internet():
-    """
-    Verify outbound internet from this ECS task (via NAT for IPv4).
-    - DNS resolution (example.com)
-    - HTTPS to ipify (returns the NAT public IP)
-    - Optional HTTP (non-fatal)
-    """
-    import socket, time, json, urllib.request
-    result = {
-        "dns_ok": False,
-        "https_ok": False,
-        "http_ok": False,
-        "public_ip": None,
-        "errors": [],
-        "timestamp": int(time.time()),
-    }
-
-    # 1) DNS
-    try:
-        socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)
-        result["dns_ok"] = True
-    except Exception as e:
-        result["errors"].append(f"DNS resolution failed: {e!r}")
-
-    # 2) HTTPS + public IP (works over IPv4 NAT)
-    try:
-        req = urllib.request.Request(
-            "https://api.ipify.org?format=json",
-            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if 200 <= r.status < 300:
-                body = json.loads(r.read().decode("utf-8", "replace"))
-                result["public_ip"] = body.get("ip")
-                result["https_ok"] = bool(result["public_ip"])
-                if not result["public_ip"]:
-                    result["errors"].append("HTTPS ok but missing public IP in body.")
-            else:
-                result["errors"].append(f"HTTPS status {r.status}")
-    except Exception as e:
-        result["errors"].append(f"HTTPS request failed: {e!r}")
-
-    # 3) Optional HTTP (some orgs block 80—non-fatal)
-    try:
-        req = urllib.request.Request(
-            "http://example.com/",
-            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if 200 <= r.status < 400:
-                result["http_ok"] = True
-    except Exception:
-        pass
-
-    # Exit code is only relevant if you run this as a script; for API we just return JSON
-    return result
-
-
-# ------------------------
-# Internet/NAT connectivity check
-# ------------------------
-@app.get("/internet/check")
-async def check_internet():
-    """
-    Verify outbound internet from this ECS task (via NAT for IPv4).
-    - DNS resolution (example.com)
-    - HTTPS to ipify (returns the NAT public IP)
-    - Optional HTTP (non-fatal)
-    """
-    import socket, time, json, urllib.request
-    result = {
-        "dns_ok": False,
-        "https_ok": False,
-        "http_ok": False,
-        "public_ip": None,
-        "errors": [],
-        "timestamp": int(time.time()),
-    }
-
-    # 1) DNS
-    try:
-        socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)
-        result["dns_ok"] = True
-    except Exception as e:
-        result["errors"].append(f"DNS resolution failed: {e!r}")
-
-    # 2) HTTPS + public IP (works over IPv4 NAT)
-    try:
-        req = urllib.request.Request(
-            "https://api.ipify.org?format=json",
-            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if 200 <= r.status < 300:
-                body = json.loads(r.read().decode("utf-8", "replace"))
-                result["public_ip"] = body.get("ip")
-                result["https_ok"] = bool(result["public_ip"])
-                if not result["public_ip"]:
-                    result["errors"].append("HTTPS ok but missing public IP in body.")
-            else:
-                result["errors"].append(f"HTTPS status {r.status}")
-    except Exception as e:
-        result["errors"].append(f"HTTPS request failed: {e!r}")
-
-    # 3) Optional HTTP (some orgs block 80—non-fatal)
-    try:
-        req = urllib.request.Request(
-            "http://example.com/",
-            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if 200 <= r.status < 400:
-                result["http_ok"] = True
-    except Exception:
-        pass
-
-    # Exit code is only relevant if you run this as a script; for API we just return JSON
-    return result
-
-
-# ------------------------
-=======
->>>>>>> c127a31b712de5ad53713b92ff776b3d344ccfbc
 # Run App
 # ------------------------
 if __name__ == "__main__":
