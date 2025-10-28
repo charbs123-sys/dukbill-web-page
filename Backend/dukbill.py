@@ -498,6 +498,67 @@ async def debug_network():
     return results
 '''
 # ------------------------
+
+# Internet/NAT connectivity check
+# ------------------------
+@app.get("/internet/check")
+async def check_internet():
+    """
+    Verify outbound internet from this ECS task (via NAT for IPv4).
+    - DNS resolution (example.com)
+    - HTTPS to ipify (returns the NAT public IP)
+    - Optional HTTP (non-fatal)
+    """
+    import socket, time, json, urllib.request
+    result = {
+        "dns_ok": False,
+        "https_ok": False,
+        "http_ok": False,
+        "public_ip": None,
+        "errors": [],
+        "timestamp": int(time.time()),
+    }
+
+    # 1) DNS
+    try:
+        socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)
+        result["dns_ok"] = True
+    except Exception as e:
+        result["errors"].append(f"DNS resolution failed: {e!r}")
+
+    # 2) HTTPS + public IP (works over IPv4 NAT)
+    try:
+        req = urllib.request.Request(
+            "https://api.ipify.org?format=json",
+            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=4) as r:
+            if 200 <= r.status < 300:
+                body = json.loads(r.read().decode("utf-8", "replace"))
+                result["public_ip"] = body.get("ip")
+                result["https_ok"] = bool(result["public_ip"])
+                if not result["public_ip"]:
+                    result["errors"].append("HTTPS ok but missing public IP in body.")
+            else:
+                result["errors"].append(f"HTTPS status {r.status}")
+    except Exception as e:
+        result["errors"].append(f"HTTPS request failed: {e!r}")
+
+    # 3) Optional HTTP (some orgs block 80—non-fatal)
+    try:
+        req = urllib.request.Request(
+            "http://example.com/",
+            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=4) as r:
+            if 200 <= r.status < 400:
+                result["http_ok"] = True
+    except Exception:
+        pass
+
+    # Exit code is only relevant if you run this as a script; for API we just return JSON
+    return result
+
 # Run App
 # ------------------------
 if __name__ == "__main__":
