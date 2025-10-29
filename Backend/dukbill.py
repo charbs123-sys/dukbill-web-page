@@ -107,6 +107,7 @@ async def startup_event():
 @app.get("/shufti/user_redirect")
 async def shufti_redirect():
     response = shufti_url()
+    print(response)
     if not response:
         raise HTTPException(status_code=500, detail="Failed to create verification")
     return {"verification_url": response["verification_url"]}
