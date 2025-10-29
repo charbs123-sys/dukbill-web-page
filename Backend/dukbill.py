@@ -151,7 +151,9 @@ async def notify_callback(request: Request):
         print(f"Verification received: {event} for {reference}")
         print(json.dumps(response_data, indent=2))
         
-        return {"status": "success"}
+        return RedirectResponse(
+        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
+        )
         
     except Exception as e:
         print(f"Error: {e}")

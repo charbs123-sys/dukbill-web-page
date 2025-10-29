@@ -25,7 +25,7 @@ def shufti_url():
         "show_results": "1",
         "show_consent": "1",
         "show_feedback_form": "0",
-        "return_document_images": "1"
+        "verification_images": "1"
     }
     
     verification_request['document'] = {
