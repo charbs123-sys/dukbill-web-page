@@ -121,17 +121,58 @@ async def shufti_redirect(user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to create verification")
     return {"verification_url": response["verification_url"]}
 
+def get_verification_images(reference: str):
+    """Fetch verification details including document image URLs"""
+    url = 'https://api.shuftipro.com/status'
+    client_id = os.environ.get("SHUFTI_CLIENTID")
+    secret_key = os.environ.get("SHUFTI_SECRET_KEY")
+    
+    payload = {
+        "reference": reference
+    }
+    
+    auth = '{}:{}'.format(client_id, secret_key)
+    b64Val = base64.b64encode(auth.encode()).decode()
+    
+    response = requests.post(
+        url,
+        headers={
+            "Authorization": "Basic %s" % b64Val,
+            "Content-Type": "application/json"
+        },
+        data=json.dumps(payload)
+    )
+    
+    return response.json()
+
+
+def download_proof_image(proof_url: str, access_token: str, save_path: str):
+    """Download a proof image using the access token"""
+    payload = {
+        "access_token": access_token
+    }
+    
+    response = requests.post(
+        proof_url,
+        json=payload,
+        headers={"Content-Type": "application/json"}
+    )
+    print("proof images")
+    print(response)
+    if response.status_code == 200:
+        with open(save_path, 'wb') as f:
+            f.write(response.content)
+        return True
+    return False
+
+
 
 @app.post('/profile/notifyCallback')
 async def notify_callback(request: Request):
     try:
         raw_data = await request.body()
         response_data = await request.json()
-        print("this is raw data")
-        print(raw_data)
-
-        print("this is response data")
-        print(response_data)
+        
         # Verify signature
         SECRET_KEY = os.environ.get("SHUFTI_SECRET_KEY")
         sp_signature = request.headers.get('signature', '')
@@ -141,24 +182,54 @@ async def notify_callback(request: Request):
         ).hexdigest()
         
         if sp_signature != calculated_signature:
-            print("Invalid signature!")
             raise HTTPException(status_code=401, detail="Invalid signature")
         
-        # Just log the results for now
         reference = response_data.get('reference')
         event = response_data.get('event')
         
-        print(f"Verification received: {event} for {reference}")
-        print(json.dumps(response_data, indent=2))
+        print(f"Verification: {event} for {reference}")
         
-        return RedirectResponse(
-        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
-        )
+        # If verification accepted, fetch the proof URLs
+        if event == 'verification.accepted':
+            # Get full verification details with proof URLs
+            full_response = get_verification_images(reference)
+            
+            proofs = full_response.get('proofs', {})
+            access_token = full_response.get('access_token')
+            
+            if proofs and access_token:
+                # Get document proof URLs
+                document_proofs = proofs.get('document', {})
+                document_front_url = document_proofs.get('proof')
+                document_back_url = document_proofs.get('additional_proof')
+                
+                print(f"Document front URL: {document_front_url}")
+                print(f"Document back URL: {document_back_url}")
+                
+                # Download the images
+                if document_front_url:
+                    save_path = f"/tmp/{reference}_front.jpg"
+                    if download_proof_image(document_front_url, access_token, save_path):
+                        print(f"✅ Downloaded front image to {save_path}")
+                        # Upload to S3 or your storage
+                        # upload_to_s3(save_path, f"verifications/{reference}_front.jpg")
+                
+                if document_back_url:
+                    save_path = f"/tmp/{reference}_back.jpg"
+                    if download_proof_image(document_back_url, access_token, save_path):
+                        print(f"✅ Downloaded back image to {save_path}")
+                        # Upload to S3 or your storage
+                        # upload_to_s3(save_path, f"verifications/{reference}_back.jpg")
+            else:
+                print("⚠️ No proofs or access_token in response")
+        
+        return {"status": "success"}
         
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 
