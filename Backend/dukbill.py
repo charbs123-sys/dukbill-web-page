@@ -104,7 +104,7 @@ async def startup_event():
 # ------------------------
 # Shufti
 # ------------------------
-@app.post("/shufti/user_redirect")
+@app.get("/shufti/user_redirect")
 async def shufti_redirect():
     response = shufti_url()
     if not response:
