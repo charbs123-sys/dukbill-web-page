@@ -1,101 +1,66 @@
-# file: db/init_db.py
+from sqlalchemy import create_engine
 import os
-import mysql.connector
 
+DB_USER = os.environ.get('DB_USER')
+DB_PASSWORD = os.environ.get('DB_PASSWORD')
+DB_HOST = os.environ.get('DB_HOST')
+DB_PORT = os.environ.get('DB_PORT', 3306)
+DB_NAME = os.environ.get('DB_NAME', 'dukbill')
 
-def initialize_database() -> None:
-    """
-    Initializes the MySQL database and tables for Dukbill.
-    Drops existing tables temporarily for a clean reset.
-    """
-    conn = None
-    try:
-        print("Connecting to MySQL server...")
-        conn = mysql.connector.connect(
-            host=os.environ.get("DB_HOST"),
-            port=int(os.environ.get("DB_PORT", 3306)),
-            user=os.environ.get("DB_USER"),
-            password=os.environ.get("DB_PASSWORD"),
-            autocommit=False,
-        )
+engine = create_engine(
+    f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
+    echo=False,
+    pool_pre_ping=True  # Verify connections before using them
+)
 
-        with conn.cursor() as cursor:
-            db_name = os.environ.get("DB_NAME", "dukbill")
+from sqlalchemy.orm import DeclarativeBase
+from typing import List
+from typing import Optional
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
+from sqlalchemy import ForeignKey
+from sqlalchemy import String
 
-            # Create database if it doesn't exist
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`")
-            cursor.execute(f"USE `{db_name}`")
-            '''
-            # TEMP: drop tables for clean reset
-            print("Deleting existing tables...")
-            cursor.execute("DROP TABLE IF EXISTS emails")
-            cursor.execute("DROP TABLE IF EXISTS clients")
-            cursor.execute("DROP TABLE IF EXISTS brokers")
-            cursor.execute("DROP TABLE IF EXISTS users")
-            print("Tables deleted.")
-            '''
-            # Create users table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id INT AUTO_INCREMENT PRIMARY KEY,
-                    auth0_id VARCHAR(255) UNIQUE NOT NULL,
-                    basiq_id VARCHAR(255),
-                    name VARCHAR(255),
-                    email VARCHAR(255) NOT NULL,
-                    phone VARCHAR(20),
-                    company VARCHAR(255),
-                    picture VARCHAR(255),
-                    isBroker BOOLEAN NOT NULL DEFAULT FALSE,
-                    profile_complete BOOLEAN NOT NULL DEFAULT FALSE
-                ) ENGINE=InnoDB
-            """)
+class Base(DeclarativeBase):
+    pass
 
-            # Create brokers table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS brokers (
-                    broker_id CHAR(6) PRIMARY KEY,
-                    user_id INT NOT NULL,
-                    CONSTRAINT fk_brokers_user
-                        FOREIGN KEY (user_id) REFERENCES users(user_id)
-                ) ENGINE=InnoDB
-            """)
+class Users(Base):
+    __tablename__ = "users"
+    user_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    auth0_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    basiq_id: Mapped[Optional[str]] = mapped_column(String(255))
+    name: Mapped[Optional[str]] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[Optional[str]] = mapped_column(String(20))
+    company: Mapped[Optional[str]] = mapped_column(String(255))
+    picture: Mapped[Optional[str]] = mapped_column(String(255))
+    isBroker: Mapped[bool] = mapped_column(nullable=False, default=False)
+    profile_complete: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-            # Create clients table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS clients (
-                    client_id CHAR(6) PRIMARY KEY,
-                    user_id INT NOT NULL,
-                    broker_id CHAR(6) NOT NULL,
-                    broker_verify BOOLEAN NOT NULL DEFAULT FALSE,
-                    brokerAccess BOOLEAN NOT NULL DEFAULT FALSE,
-                    CONSTRAINT fk_clients_user
-                        FOREIGN KEY (user_id) REFERENCES users(user_id),
-                    CONSTRAINT fk_clients_broker
-                        FOREIGN KEY (broker_id) REFERENCES brokers(broker_id)
-                ) ENGINE=InnoDB
-            """)
+class Brokers(Base):
+    __tablename__ = "brokers"
+    broker_id: Mapped[str] = mapped_column(String(6), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
 
-            # Create client_emails table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS emails (
-                    email_id INT AUTO_INCREMENT PRIMARY KEY,
-                    client_id CHAR(6) NOT NULL,
-                    domain VARCHAR(255),
-                    email_address VARCHAR(255),
-                    CONSTRAINT fk_client_emails_client
-                        FOREIGN KEY (client_id) REFERENCES clients(client_id)
-                ) ENGINE=InnoDB
-            """)
+class Clients(Base):
+    __tablename__ = "clients"
+    client_id: Mapped[str] = mapped_column(String(6), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    broker_id: Mapped[str] = mapped_column(ForeignKey("brokers.broker_id"), nullable=False)
+    broker_verify: Mapped[bool] = mapped_column(nullable=False, default=False)
+    brokerAccess: Mapped[bool] = mapped_column(nullable=False, default=False)
 
-        conn.commit()
-        print("Database initialized successfully.")
+class Emails(Base):
+    __tablename__ = "emails"
+    email_id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.client_id"), nullable=False)
+    domain: Mapped[Optional[str]] = mapped_column(String(255))
+    email_address: Mapped[Optional[str]] = mapped_column(String(255))
 
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        if conn and conn.is_connected():
-            conn.rollback()
-        raise
-
-    finally:
-        if conn and conn.is_connected():
-            conn.close()
+def initialize_database():
+    """Create all tables if they don't exist"""
+    #Base.metadata.drop_all(engine)
+    #print("All tables dropped successfully")
+    Base.metadata.create_all(engine)
+    print("Database tables created/verified successfully")
