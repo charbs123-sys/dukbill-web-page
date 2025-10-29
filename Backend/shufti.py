@@ -52,7 +52,7 @@ def shufti_url():
         f"{response.content.decode()}{secret_key_new}".encode()
     ).hexdigest()
     sp_signature = response.headers.get('Signature', "")
-    json_response = json.loads(response.content)
+    json_response = json.loads((response.content))
     
     if sp_signature == calculated_signature:
         return json_response
