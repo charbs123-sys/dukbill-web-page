@@ -345,7 +345,8 @@ async def verify_client_documents(client_id: int, user=Depends(get_current_user)
     client = verify_client(client_id)
     print(client)
     print(type(client["broker_verify"]))
-    return {"broker_verify": client["broker_verify"]}
+    return {"broker_verify": 1}
+    return {"broker_verify": int(client["broker_verify"])}
 # ------------------------
 # Basiq Integration
 # ------------------------
