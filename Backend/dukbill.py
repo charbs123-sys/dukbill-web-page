@@ -104,9 +104,18 @@ async def startup_event():
 # ------------------------
 # Shufti
 # ------------------------
-@app.get("/shufti/user_redirect")
-async def shufti_redirect():
+@app.post("/shufti/user_redirect")
+async def shufti_redirect(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {
+        "auth0_id": auth0_id,
+        "expires": time.time() + 600
+    }
     response = shufti_url()
+    print("this is response")
     print(response)
     if not response:
         raise HTTPException(status_code=500, detail="Failed to create verification")
