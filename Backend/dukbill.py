@@ -14,6 +14,8 @@ from config import AUTH0_DOMAIN
 from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
+from redis_utils import start_expiry_listener
+from shufti import shufti_url
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -24,6 +26,7 @@ import os
 from typing import List, Dict, Any
 import secrets
 import time
+
 oauth_states = {}
 
 # ------------------------
@@ -87,6 +90,65 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return claims, token
+
+# ------------------------
+# Startup
+# ------------------------
+
+@app.on_event("startup")
+async def startup_event():
+    """Start Redis expiry listener when app starts"""
+    start_expiry_listener()
+    print("✓ Application started with Redis expiry listener")
+
+# ------------------------
+# Shufti
+# ------------------------
+@app.post("/shufti/user_redirect")
+async def shufti_redirect():
+    response = shufti_url()
+    if not response:
+        raise HTTPException(status_code=500, detail="Failed to create verification")
+    return {"verification_url": response["verification_url"]}
+
+
+@app.post('/profile/notifyCallback')
+async def notify_callback(request: Request):
+    try:
+        raw_data = await request.body()
+        response_data = await request.json()
+        print("this is raw data")
+        print(raw_data)
+
+        print("this is response data")
+        print(response_data)
+        # Verify signature
+        SECRET_KEY = os.environ.get("SHUFTI_SECRET_KEY")
+        sp_signature = request.headers.get('signature', '')
+        secret_key_hash = hashlib.sha256(SECRET_KEY.encode()).hexdigest()
+        calculated_signature = hashlib.sha256(
+            raw_data + secret_key_hash.encode()
+        ).hexdigest()
+        
+        if sp_signature != calculated_signature:
+            print("Invalid signature!")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+        
+        # Just log the results for now
+        reference = response_data.get('reference')
+        event = response_data.get('event')
+        
+        print(f"Verification received: {event} for {reference}")
+        print(json.dumps(response_data, indent=2))
+        
+        return {"status": "success"}
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 # ------------------------
 # Auth / User Routes
