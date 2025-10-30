@@ -173,7 +173,8 @@ async def notify_callback(request: Request):
         user_email = verification_state["email"]
         hashed_user_email = hash_email(user_email)
         print(f"User ID: {user_id}, Auth0 ID: {auth0_id}")
-        
+        print("this is response data")
+        print(response_data)
         # If verification accepted, fetch proof images
         if event == 'verification.accepted':
             print("Fetching proof images from Status API...")
