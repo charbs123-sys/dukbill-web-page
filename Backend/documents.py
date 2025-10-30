@@ -257,3 +257,6 @@ async def upload_client_document(client_email: str, category: str, company: str,
     save_emails_json_to_cache(hashed_email, documents)
 
     return new_doc
+
+async def add_document_s3():
+    pass
