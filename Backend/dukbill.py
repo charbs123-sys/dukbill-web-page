@@ -260,7 +260,7 @@ async def notify_callback(request: Request):
                             
                             # Option 2: Upload bytes directly (more efficient)
                             s3_key = f"{user_id}/{reference}_front.jpg"
-                            s3_url = upload_bytes_to_s3(front_image, s3_key)
+                            s3_url = await upload_bytes_to_s3(front_image, s3_key)
                             
                             if s3_url:
                                 print(f"✅ Front image uploaded: {s3_url}")
@@ -270,7 +270,7 @@ async def notify_callback(request: Request):
                         back_image = download_proof_image(back_url, access_token)
                         if back_image:
                             s3_key = f"{user_id}/{reference}_back.jpg"
-                            s3_url = upload_bytes_to_s3(back_image, s3_key)
+                            s3_url = await upload_bytes_to_s3(back_image, s3_key)
                             
                             if s3_url:
                                 print(f"✅ Back image uploaded: {s3_url}")
