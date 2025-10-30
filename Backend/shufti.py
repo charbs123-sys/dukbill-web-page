@@ -21,7 +21,7 @@ def shufti_url(user_email: str, user_id: int):
         "email": user_email,  # Use actual user email
         "country": "AU",
         "language": "EN",
-        "redirect_url": "https://yourdomain.com/verification-complete",
+        #"redirect_url": "https://yourdomain.com/verification-complete",
         "verification_mode": "image_only",
         "allow_offline": "1",
         "allow_online": "1",
