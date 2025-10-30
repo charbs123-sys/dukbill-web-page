@@ -104,22 +104,36 @@ async def startup_event():
 # ------------------------
 # Shufti
 # ------------------------
+verification_states = {}
 @app.post("/shufti/user_redirect")
 async def shufti_redirect(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-
-    state = secrets.token_urlsafe(32)
-    oauth_states[state] = {
-        "auth0_id": auth0_id,
-        "expires": time.time() + 600
-    }
-    response = shufti_url()
-    print("this is response")
-    print(response)
+    
+    # Get user info
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create verification request
+    response = shufti_url(user_obj["email"], user_obj["user_id"])
     if not response:
         raise HTTPException(status_code=500, detail="Failed to create verification")
-    return {"verification_url": response["verification_url"]}
+    
+    reference = response.get("reference")
+    
+    # Store the mapping of reference to user
+    verification_states[reference] = {
+        "user_id": user_obj["user_id"],
+        "auth0_id": auth0_id,
+        "email": user_obj["email"],
+        "created_at": time.time()
+    }
+    
+    return {
+        "verification_url": response["verification_url"],
+        "reference": reference
+    }
 
 def get_verification_status_with_proofs(reference: str):
     """Call Status API to get proof URLs and access token"""
@@ -200,35 +214,42 @@ async def notify_callback(request: Request):
         print(f"Callback received: {event} for {reference}")
         print(f"{'='*60}")
         
+        # Find the user associated with this verification
+        verification_state = verification_states.get(reference)
+        
+        if not verification_state:
+            print(f"⚠️ No user found for reference: {reference}")
+            # Still return 200 to acknowledge callback
+            return {"status": "success"}
+        
+        user_id = verification_state["user_id"]
+        auth0_id = verification_state["auth0_id"]
+        
+        print(f"User ID: {user_id}, Auth0 ID: {auth0_id}")
+        
         # If verification accepted, fetch proof images
         if event == 'verification.accepted':
             print("Fetching proof images from Status API...")
             
-            # Call Status API to get proof URLs and access token
             status_response = get_verification_status_with_proofs(reference)
-            print("this is status response")
-            print(status_response)
+            
             if status_response:
                 proofs = status_response.get('proofs', {})
-                access_token = status_response.get('access_token')
+                access_token = proofs.get('access_token')
                 
                 if proofs and access_token:
                     document_proofs = proofs.get('document', {})
-                    
-                    # Get front and back document URLs
                     front_url = document_proofs.get('proof')
                     back_url = document_proofs.get('additional_proof')
                     
                     print(f"Front proof URL: {front_url}")
                     print(f"Back proof URL: {back_url}")
-                    print(f"Access token: {access_token[:20]}...")
                     
                     # Download front image
                     if front_url:
                         front_image = download_proof_image(front_url, access_token)
                         if front_image:
-                            # Save to file or upload to S3
-                            filename = f"{reference}_front.jpg"
+                            filename = f"{user_id}_{reference}_front.jpg"
                             filepath = f"/tmp/{filename}"
                             
                             with open(filepath, 'wb') as f:
@@ -236,30 +257,45 @@ async def notify_callback(request: Request):
                             
                             print(f"✅ Downloaded front image: {filename}")
                             
-                            # Upload to S3 (uncomment when ready)
-                            # s3_key = f"verifications/{filename}"
-                            # upload_to_s3(filepath, s3_key)
+                            # Option 2: Upload bytes directly (more efficient)
+                            s3_key = f"{user_id}/{reference}_front.jpg"
+                            s3_url = upload_bytes_to_s3(front_image, s3_key)
+                            
+                            if s3_url:
+                                print(f"✅ Front image uploaded: {s3_url}")
                     
                     # Download back image
                     if back_url:
                         back_image = download_proof_image(back_url, access_token)
                         if back_image:
-                            filename = f"{reference}_back.jpg"
-                            filepath = f"/tmp/{filename}"
+                            s3_key = f"{user_id}/{reference}_back.jpg"
+                            s3_url = upload_bytes_to_s3(back_image, s3_key)
                             
-                            with open(filepath, 'wb') as f:
-                                f.write(back_image)
-                            
-                            print(f"✅ Downloaded back image: {filename}")
-                            
-                            # Upload to S3 (uncomment when ready)
-                            # s3_key = f"verifications/{filename}"
-                            # upload_to_s3(filepath, s3_key)
+                            if s3_url:
+                                print(f"✅ Back image uploaded: {s3_url}")
+                    
+                    # Store verification data in database
+                    verification_data = response_data.get('verification_data', {})
+                    # TODO: Save to database linked to user_id
+                    # save_verification_result(user_id, reference, verification_data, s3_keys)
+                    
+                    print(f"✅ Verification complete for user {user_id}")
+                    
+                    # Clean up the state
+                    del verification_states[reference]
                 else:
                     print("⚠️ No proofs or access_token in status response")
-                    print(f"Status response: {json.dumps(status_response, indent=2)}")
             else:
                 print("⚠️ Failed to get status response")
+        
+        elif event == 'verification.declined':
+            print(f"❌ Verification declined for user {user_id}")
+            declined_reason = response_data.get('declined_reason', 'Unknown')
+            print(f"Reason: {declined_reason}")
+            # TODO: Update database with declined status
+            
+            # Clean up the state
+            del verification_states[reference]
         
         return {"status": "success"}
         
@@ -526,8 +562,6 @@ async def download_client_documents(client_id: int, user=Depends(get_current_use
 async def verify_client_documents(client_id: int, user=Depends(get_current_user)):
     toggle_client_verification(client_id)
     client = verify_client(client_id)
-    print(client)
-    print(type(client["broker_verify"]))
     return {"broker_verify": int(client["broker_verify"])}
 # ------------------------
 # Basiq Integration

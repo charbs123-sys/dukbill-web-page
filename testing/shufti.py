@@ -28,7 +28,7 @@ client_id	= os.environ.get("SHUFTI_CLIENTID")
 
 # Your Shufti account Secret Key
 secret_key = os.environ.get("SHUFTI_SECRET_KEY")
-print(secret_key)
+
 verification_request = {
         #your unique request reference
         "reference":'ref-{}{}'.format(randint(1000, 9999), randint(1000, 9999)),

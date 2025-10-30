@@ -257,3 +257,44 @@ async def upload_client_document(client_email: str, category: str, company: str,
     save_emails_json_to_cache(hashed_email, documents)
 
     return new_doc
+
+async def upload_bytes_to_s3(file_bytes: bytes, s3_key: str, bucket_name: str = None):
+    """
+    Upload bytes directly to S3 without saving to disk first
+    
+    Args:
+        file_bytes: File content as bytes
+        s3_key: S3 key/path (e.g., "user_123/ref-123_front.jpg")
+        bucket_name: S3 bucket name (optional, reads from env if not provided)
+    
+    Returns:
+        str: S3 URL of uploaded file, or None if failed
+    """
+    if bucket_name is None:
+        bucket_name = os.environ.get("S3_BUCKET_NAME")
+    
+    if not bucket_name:
+        print("❌ S3_BUCKET_NAME not configured")
+        return None
+    
+    try:
+        # Upload bytes directly
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=file_bytes,
+            ContentType='image/jpeg',
+            ACL='private'
+        )
+        
+        s3_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+        print(f"✅ Uploaded to S3: {s3_url}")
+        
+        return s3_url
+        
+    except ClientError as e:
+        print(f"❌ Failed to upload to S3: {e}")
+        return None
+    except Exception as e:
+        print(f"❌ Unexpected error uploading to S3: {e}")
+        return None
