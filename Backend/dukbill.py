@@ -121,7 +121,8 @@ async def shufti_redirect(user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to create verification")
     
     reference = response.get("reference")
-    
+    print("this is response")
+    print(response)
     # Store the mapping of reference to user
     verification_states[reference] = {
         "user_id": user_obj["user_id"],
