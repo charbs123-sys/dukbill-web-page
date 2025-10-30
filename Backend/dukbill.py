@@ -121,8 +121,8 @@ async def shufti_redirect(user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to create verification")
     return {"verification_url": response["verification_url"]}
 
-def get_verification_images(reference: str):
-    """Fetch verification details including document image URLs"""
+def get_verification_status_with_proofs(reference: str):
+    """Call Status API to get proof URLs and access token"""
     url = 'https://api.shuftipro.com/status'
     client_id = os.environ.get("SHUFTI_CLIENTID")
     secret_key = os.environ.get("SHUFTI_SECRET_KEY")
@@ -131,23 +131,34 @@ def get_verification_images(reference: str):
         "reference": reference
     }
     
-    auth = '{}:{}'.format(client_id, secret_key)
+    auth = f'{client_id}:{secret_key}'
     b64Val = base64.b64encode(auth.encode()).decode()
     
     response = requests.post(
         url,
         headers={
-            "Authorization": "Basic %s" % b64Val,
+            "Authorization": f"Basic {b64Val}",
             "Content-Type": "application/json"
         },
         data=json.dumps(payload)
     )
     
-    return response.json()
+    # Verify signature
+    secret_key_hash = hashlib.sha256(secret_key.encode()).hexdigest()
+    calculated_signature = hashlib.sha256(
+        f"{response.content.decode()}{secret_key_hash}".encode()
+    ).hexdigest()
+    sp_signature = response.headers.get('Signature', "")
+    
+    if sp_signature == calculated_signature:
+        return response.json()
+    else:
+        print(f"Invalid signature in status response")
+        return None
 
 
-def download_proof_image(proof_url: str, access_token: str, save_path: str):
-    """Download a proof image using the access token"""
+def download_proof_image(proof_url: str, access_token: str):
+    """Download proof image using access token"""
     payload = {
         "access_token": access_token
     }
@@ -157,14 +168,12 @@ def download_proof_image(proof_url: str, access_token: str, save_path: str):
         json=payload,
         headers={"Content-Type": "application/json"}
     )
-    print("proof images")
-    print(response)
+    
     if response.status_code == 200:
-        with open(save_path, 'wb') as f:
-            f.write(response.content)
-        return True
-    return False
-
+        return response.content
+    else:
+        print(f"Failed to download proof: {response.status_code}")
+        return None
 
 
 @app.post('/profile/notifyCallback')
@@ -187,46 +196,75 @@ async def notify_callback(request: Request):
         reference = response_data.get('reference')
         event = response_data.get('event')
         
-        print(f"Verification: {event} for {reference}")
+        print(f"\n{'='*60}")
+        print(f"Callback received: {event} for {reference}")
+        print(f"{'='*60}")
         
-        # If verification accepted, fetch the proof URLs
+        # If verification accepted, fetch proof images
         if event == 'verification.accepted':
-            # Get full verification details with proof URLs
-            full_response = get_verification_images(reference)
+            print("Fetching proof images from Status API...")
             
-            proofs = full_response.get('proofs', {})
-            access_token = full_response.get('access_token')
-            
-            if proofs and access_token:
-                # Get document proof URLs
-                document_proofs = proofs.get('document', {})
-                document_front_url = document_proofs.get('proof')
-                document_back_url = document_proofs.get('additional_proof')
+            # Call Status API to get proof URLs and access token
+            status_response = get_verification_status_with_proofs(reference)
+            print("this is status response")
+            print(status_response)
+            if status_response:
+                proofs = status_response.get('proofs', {})
+                access_token = status_response.get('access_token')
                 
-                print(f"Document front URL: {document_front_url}")
-                print(f"Document back URL: {document_back_url}")
-                
-                # Download the images
-                if document_front_url:
-                    save_path = f"/tmp/{reference}_front.jpg"
-                    if download_proof_image(document_front_url, access_token, save_path):
-                        print(f"✅ Downloaded front image to {save_path}")
-                        # Upload to S3 or your storage
-                        # upload_to_s3(save_path, f"verifications/{reference}_front.jpg")
-                
-                if document_back_url:
-                    save_path = f"/tmp/{reference}_back.jpg"
-                    if download_proof_image(document_back_url, access_token, save_path):
-                        print(f"✅ Downloaded back image to {save_path}")
-                        # Upload to S3 or your storage
-                        # upload_to_s3(save_path, f"verifications/{reference}_back.jpg")
+                if proofs and access_token:
+                    document_proofs = proofs.get('document', {})
+                    
+                    # Get front and back document URLs
+                    front_url = document_proofs.get('proof')
+                    back_url = document_proofs.get('additional_proof')
+                    
+                    print(f"Front proof URL: {front_url}")
+                    print(f"Back proof URL: {back_url}")
+                    print(f"Access token: {access_token[:20]}...")
+                    
+                    # Download front image
+                    if front_url:
+                        front_image = download_proof_image(front_url, access_token)
+                        if front_image:
+                            # Save to file or upload to S3
+                            filename = f"{reference}_front.jpg"
+                            filepath = f"/tmp/{filename}"
+                            
+                            with open(filepath, 'wb') as f:
+                                f.write(front_image)
+                            
+                            print(f"✅ Downloaded front image: {filename}")
+                            
+                            # Upload to S3 (uncomment when ready)
+                            # s3_key = f"verifications/{filename}"
+                            # upload_to_s3(filepath, s3_key)
+                    
+                    # Download back image
+                    if back_url:
+                        back_image = download_proof_image(back_url, access_token)
+                        if back_image:
+                            filename = f"{reference}_back.jpg"
+                            filepath = f"/tmp/{filename}"
+                            
+                            with open(filepath, 'wb') as f:
+                                f.write(back_image)
+                            
+                            print(f"✅ Downloaded back image: {filename}")
+                            
+                            # Upload to S3 (uncomment when ready)
+                            # s3_key = f"verifications/{filename}"
+                            # upload_to_s3(filepath, s3_key)
+                else:
+                    print("⚠️ No proofs or access_token in status response")
+                    print(f"Status response: {json.dumps(status_response, indent=2)}")
             else:
-                print("⚠️ No proofs or access_token in response")
+                print("⚠️ Failed to get status response")
         
         return {"status": "success"}
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
