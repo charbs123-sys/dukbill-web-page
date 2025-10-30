@@ -225,7 +225,8 @@ async def notify_callback(request: Request):
         
         user_id = verification_state["user_id"]
         auth0_id = verification_state["auth0_id"]
-        
+        user_email = verification_state["email"]
+        hashed_user_email = hash_email(user_email)
         print(f"User ID: {user_id}, Auth0 ID: {auth0_id}")
         
         # If verification accepted, fetch proof images
@@ -250,16 +251,8 @@ async def notify_callback(request: Request):
                     if front_url:
                         front_image = download_proof_image(front_url, access_token)
                         if front_image:
-                            filename = f"{user_id}_{reference}_front.jpg"
-                            filepath = f"/tmp/{filename}"
-                            
-                            with open(filepath, 'wb') as f:
-                                f.write(front_image)
-                            
-                            print(f"✅ Downloaded front image: {filename}")
-                            
                             # Option 2: Upload bytes directly (more efficient)
-                            s3_key = f"{user_id}/{reference}_front.jpg"
+                            s3_key = f"{hashed_user_email}/{reference}_front.jpg"
                             s3_url = await upload_bytes_to_s3(front_image, s3_key)
                             
                             if s3_url:
@@ -269,7 +262,7 @@ async def notify_callback(request: Request):
                     if back_url:
                         back_image = download_proof_image(back_url, access_token)
                         if back_image:
-                            s3_key = f"{user_id}/{reference}_back.jpg"
+                            s3_key = f"{hashed_user_email}/{reference}_back.jpg"
                             s3_url = await upload_bytes_to_s3(back_image, s3_key)
                             
                             if s3_url:
