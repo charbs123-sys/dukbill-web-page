@@ -257,24 +257,22 @@ async def notify_callback(request: Request):
                             
                             print(f"✅ Downloaded front image: {filename}")
                             
-                            # Upload to S3 with user_id in path
-                            s3_key = f"verifications/user_{user_id}/{filename}"
-                            # upload_to_s3(filepath, s3_key)
+                            # Option 2: Upload bytes directly (more efficient)
+                            s3_key = f"{user_id}/{reference}_front.jpg"
+                            s3_url = upload_bytes_to_s3(front_image, s3_key)
+                            
+                            if s3_url:
+                                print(f"✅ Front image uploaded: {s3_url}")
                     
                     # Download back image
                     if back_url:
                         back_image = download_proof_image(back_url, access_token)
                         if back_image:
-                            filename = f"{user_id}_{reference}_back.jpg"
-                            filepath = f"/tmp/{filename}"
+                            s3_key = f"{user_id}/{reference}_back.jpg"
+                            s3_url = upload_bytes_to_s3(back_image, s3_key)
                             
-                            with open(filepath, 'wb') as f:
-                                f.write(back_image)
-                            
-                            print(f"✅ Downloaded back image: {filename}")
-                            
-                            s3_key = f"verifications/user_{user_id}/{filename}"
-                            # upload_to_s3(filepath, s3_key)
+                            if s3_url:
+                                print(f"✅ Back image uploaded: {s3_url}")
                     
                     # Store verification data in database
                     verification_data = response_data.get('verification_data', {})
