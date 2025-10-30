@@ -283,7 +283,7 @@ async def upload_bytes_to_s3(file_bytes: bytes, s3_key: str, bucket_name: str = 
             Bucket=bucket_name,
             Key=s3_key,
             Body=file_bytes,
-            ContentType='image/jpeg',
+            ContentType='application/pdf',
             ACL='private'
         )
         

@@ -1,6 +1,10 @@
 import base64, requests, json, hashlib
 from random import randint
 import os
+from PIL import Image
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.pdfgen import canvas
+from io import BytesIO
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -65,5 +69,30 @@ def shufti_url(user_email: str, user_id: int):
         print(f'Invalid signature: {response.content}')
         return None
 
-
-
+def jpg_to_pdf_simple(image_bytes: bytes) -> bytes:
+    """
+    Simpler conversion using PIL's built-in PDF support
+    
+    Args:
+        image_bytes: JPG image as bytes
+    
+    Returns:
+        bytes: PDF file as bytes
+    """
+    try:
+        # Open image
+        img = Image.open(BytesIO(image_bytes))
+        
+        # Convert to RGB
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Save as PDF to BytesIO
+        pdf_buffer = BytesIO()
+        img.save(pdf_buffer, 'PDF', resolution=100.0)
+        
+        return pdf_buffer.getvalue()
+        
+    except Exception as e:
+        print(f"❌ Error converting JPG to PDF: {e}")
+        return None
