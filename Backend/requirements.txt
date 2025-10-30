@@ -15,3 +15,5 @@ python-multipart
 pypdf
 redis
 sqlalchemy
+Pillow 
+reportlab

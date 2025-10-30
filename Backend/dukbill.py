@@ -15,7 +15,7 @@ from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
-from shufti import shufti_url
+from shufti import shufti_url, jpg_to_pdf_simple
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -249,25 +249,29 @@ async def notify_callback(request: Request):
                     
                     # Download front image
                     if front_url:
-                        front_image = download_proof_image(front_url, access_token)
-                        if front_image:
-                            # Option 2: Upload bytes directly (more efficient)
-                            s3_key = f"{hashed_user_email}/{reference}_front.jpg"
-                            s3_url = await upload_bytes_to_s3(front_image, s3_key)
-                            
-                            if s3_url:
-                                print(f"✅ Front image uploaded: {s3_url}")
-                    
+                        front_image_jpg = download_proof_image(front_url, access_token)
+                        if front_image_jpg:
+                            front_image_pdf = jpg_to_pdf_simple(front_image_jpg)
+                            if front_image_pdf:
+                                # Option 2: Upload bytes directly (more efficient)
+                                s3_key = f"{hashed_user_email}/categorised/ID/{reference}_front.jpg"
+                                s3_url = await upload_bytes_to_s3(front_image_pdf, s3_key)
+                                
+                                if s3_url:
+                                    print(f"✅ Front image uploaded: {s3_url}")
+                        
                     # Download back image
                     if back_url:
-                        back_image = download_proof_image(back_url, access_token)
-                        if back_image:
-                            s3_key = f"{hashed_user_email}/{reference}_back.jpg"
-                            s3_url = await upload_bytes_to_s3(back_image, s3_key)
-                            
-                            if s3_url:
-                                print(f"✅ Back image uploaded: {s3_url}")
-                    
+                        back_image_jpg = download_proof_image(back_url, access_token)
+                        if back_image_jpg:
+                            back_image_pdf = jpg_to_pdf_simple(back_image_jpg)
+                            if back_image_pdf:
+                                s3_key = f"{hashed_user_email}/categorised/ID/{reference}_back.jpg"
+                                s3_url = await upload_bytes_to_s3(back_image_pdf, s3_key)
+                                
+                                if s3_url:
+                                    print(f"✅ Back image uploaded: {s3_url}")
+                        
                     # Store verification data in database
                     verification_data = response_data.get('verification_data', {})
                     # TODO: Save to database linked to user_id
