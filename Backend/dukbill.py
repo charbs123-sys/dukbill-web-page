@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from basiq_api import BasiqAPI
 
-from auth import verify_token, verify_google_token
+from auth import verify_token, verify_google_token, verify_xero_auth
 from users import *
 from documents import *
 from db_init import initialize_database
@@ -64,6 +64,9 @@ security = HTTPBearer()
 # ------------------------
 class GoogleTokenRequest(BaseModel):
     googleToken: str
+
+class XeroAuthRequest(BaseModel):
+    code: str
 
 # ------------------------
 # Dependencies
@@ -260,6 +263,36 @@ async def google_signup(req: GoogleTokenRequest):
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid Google token")
     return {"success": "User registered successfully"}
+
+@app.post("/api/xero-signup")
+async def xero_signup(req: XeroAuthRequest):
+    """
+    Exchange authorization code for tokens and get user info
+    Similar to your Google signup flow
+    """
+    user_data = await verify_xero_auth(req.code)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
+    
+    # user_data will contain email, name, xero_user_id, tenant_id
+    # Create/update user in your database here
+    
+    return {"success": "User registered successfully"}
+
+@app.post("/api/xero-signin")
+async def xero_signin(req: XeroAuthRequest):
+    """
+    Same flow as signup - Xero OAuth handles both
+    """
+    user_data = await verify_xero_auth(req.code)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
+    
+    # Look up existing user in your database
+    
+    return {"success": "User signed in successfully"}
+
+
 
 @app.post("/auth/client/register")
 async def register(user=Depends(get_current_user)):
