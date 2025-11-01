@@ -62,6 +62,60 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
         })
     return headings
 
+def get_client_verified_ids_dashboard(client_id: str, emails: list) -> list:
+    """
+    Returns a structured dashboard for a client based on verified IDs.
+    """
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+
+    all_documents = []
+
+    for email_entry in emails:
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
+
+        try:
+            from S3_utils import list_s3_files
+            verified_ids_path = "/verified_ids"
+            files = list_s3_files(hashed_email, verified_ids_path)
+            
+            pdf_files = [f for f in files if f.endswith('.pdf')]
+            if pdf_files:
+                all_documents.append({
+                    "hashed_email": hashed_email,
+                    "broker_document_category": "Verified IDs",
+                    "files": pdf_files
+                })
+        except Exception:
+            continue
+
+    headings = []
+    if all_documents:
+        cards = [
+            {
+                "id": doc.get("hashed_email"),
+                "company_name": "Identity Verification",  # Add this
+                "payment_amount": 0,  # Add this
+                "due_date": None,  # Add this
+                "hashed_email": doc.get("hashed_email"),
+                "files": doc.get("files", []),  # Keep this for reference
+                "file_count": len(doc.get("files", []))  # Keep this for reference
+            }
+            for doc in all_documents
+        ]
+        
+        headings.append({
+            "heading": "Identity Verification",
+            "categories": [{
+                "category_name": "Identity Verification",
+                "cards": cards
+            }],
+            "missing_categories": []
+        })
+    
+    return headings
+
 
 def get_client_category_documents(client_id: str, emails: list, category: str) -> list:
     """
@@ -117,6 +171,43 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
                 "hashed_email": hashed_email,
             })
     return all_filtered_docs
+
+def get_client_verified_ids_documents(client_id: str, emails: list) -> list:
+    """
+    Returns all verified ID documents for a client across multiple emails.
+    """
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+
+    all_verified_docs = []
+
+    for email_entry in emails:
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
+
+        try:
+            prefix = f"{hashed_email}/verified_ids/"
+            s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+            files = s3_objects.get("Contents", [])
+
+            pdf_keys = [obj["Key"] for obj in files if obj["Key"].endswith('.pdf')]
+            
+            if pdf_keys:
+                urls = [get_cloudfront_url(k) for k in pdf_keys]
+                
+                all_verified_docs.append({
+                    "id": hashed_email,  # Using hashed_email as unique ID
+                    "category": "Verified IDs",
+                    "company": "Identity Verification",
+                    "amount": 0,  # Not applicable for IDs
+                    "due_date": None,  # Not applicable for IDs
+                    "url": urls,
+                    "hashed_email": hashed_email,
+                })
+        except Exception:
+            continue
+
+    return all_verified_docs
 
 
 def move_pdfs_to_new_category(hashed_email: str, threadid: str, old_category: str, new_category: str) -> None:

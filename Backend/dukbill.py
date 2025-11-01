@@ -112,7 +112,9 @@ verification_states = {}
 async def shufti_redirect(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-    
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
     # Get user info
     user_obj = find_user(auth0_id)
     if not user_obj:
@@ -130,7 +132,9 @@ async def shufti_redirect(user=Depends(get_current_user)):
         "user_id": user_obj["user_id"],
         "auth0_id": auth0_id,
         "email": user_obj["email"],
-        "created_at": time.time()
+        "created_at": time.time(),
+        "emails": emails,
+        "client_id": client["client_id"]
     }
     
     return {
@@ -175,15 +179,11 @@ async def notify_callback(request: Request):
         user_email = verification_state["email"]
         hashed_user_email = hash_email(user_email)
         print(f"User ID: {user_id}, Auth0 ID: {auth0_id}")
-        print("this is response data")
-        print(response_data)
         # If verification accepted, fetch proof images
         if event == 'verification.accepted':
             print("Fetching proof images from Status API...")
             
             status_response = get_verification_status_with_proofs(reference)
-            print("this is status response")
-            print(status_response)
             if status_response:
                 proofs = status_response.get('proofs', {})
                 access_token = proofs.get('access_token')
@@ -202,7 +202,7 @@ async def notify_callback(request: Request):
                         if front_image_jpg:
                             front_image_pdf = jpg_to_pdf_simple(front_image_jpg)
                             if front_image_pdf:
-                                # Option 2: Upload bytes directly (more efficient)
+
                                 s3_key = f"{hashed_user_email}/verified_ids/{status_response["verification_data"]["document"]["selected_type"][0]}_front.pdf"
                                 s3_url = await upload_bytes_to_s3(front_image_pdf, s3_key)
                                 
@@ -215,7 +215,7 @@ async def notify_callback(request: Request):
                         if back_image_jpg:
                             back_image_pdf = jpg_to_pdf_simple(back_image_jpg)
                             if back_image_pdf:
-                                s3_key = f"{hashed_user_email}/verified_ids/{status_response["verification_data"]["document"]["selected_type"][1]}_back.pdf"
+                                s3_key = f"{hashed_user_email}/verified_ids/{status_response["verification_data"]["document"]["selected_type"][0]}_back.pdf"
                                 s3_url = await upload_bytes_to_s3(back_image_pdf, s3_key)
                                 
                                 if s3_url:
@@ -224,7 +224,6 @@ async def notify_callback(request: Request):
                     # Store verification data in database
                     verification_data = response_data.get('verification_data', {})
                     # TODO: Save to database linked to user_id
-                    # save_verification_result(user_id, reference, verification_data, s3_keys)
                     
                     print(f"✅ Verification complete for user {user_id}")
                     
@@ -465,6 +464,10 @@ async def get_client_documents(user=Depends(get_current_user)):
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
     headings = get_client_dashboard(client["client_id"], emails)
+    verified_headings = get_client_verified_ids_dashboard(client["client_id"], emails)
+
+    if verified_headings:
+        headings.extend(verified_headings)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/clients/category/documents")
@@ -476,7 +479,13 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
 
-    return get_client_category_documents(client["client_id"], emails, category)
+    documents = get_client_category_documents(client["client_id"], emails, category)
+
+    if category == "Identity Verification":
+        verified_docs = get_client_verified_ids_documents(client["client_id"], emails)
+        documents.extend(verified_docs)
+
+    return documents
 
 @app.post("/broker/access")
 async def toggle_broker_access_route(user=Depends(get_current_user)):
