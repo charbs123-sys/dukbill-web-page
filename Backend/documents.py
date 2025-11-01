@@ -192,19 +192,41 @@ def get_client_verified_ids_documents(client_id: str, emails: list) -> list:
 
             pdf_keys = [obj["Key"] for obj in files if obj["Key"].endswith('.pdf')]
             
-            if pdf_keys:
-                urls = [get_cloudfront_url(k) for k in pdf_keys]
+            # Group PDFs by document type (e.g., driving_license, id_card, passport)
+            doc_type_map = {}
+            for key in pdf_keys:
+                filename = key.split("/")[-1]
+                # Extract document type (everything before _front or _back)
+                if "_front.pdf" in filename:
+                    doc_type = filename.replace("_front.pdf", "")
+                elif "_back.pdf" in filename:
+                    doc_type = filename.replace("_back.pdf", "")
+                else:
+                    # For passport or other single-sided docs
+                    doc_type = filename.replace(".pdf", "")
+                
+                if doc_type not in doc_type_map:
+                    doc_type_map[doc_type] = []
+                doc_type_map[doc_type].append(key)
+            
+            # Create a separate entry for each document type
+            for doc_type, keys in doc_type_map.items():
+                urls = [get_cloudfront_url(k) for k in keys]
+                
+                # Format the document type nicely (e.g., driving_license -> Driving License)
+                formatted_name = doc_type.replace("_", " ").title()
                 
                 all_verified_docs.append({
-                    "id": hashed_email,  # Using hashed_email as unique ID
+                    "id": f"{hashed_email}_{doc_type}",  # Unique ID per doc type
                     "category": "Verified IDs",
-                    "company": "Identity Verification",
-                    "amount": 0,  # Not applicable for IDs
-                    "due_date": None,  # Not applicable for IDs
+                    "company": formatted_name,  # e.g., "Driving License", "Id Card", "Passport"
+                    "amount": 0,
+                    "due_date": None,
                     "url": urls,
                     "hashed_email": hashed_email,
                 })
-        except Exception:
+        except Exception as e:
+            logging.error(f"Error fetching verified IDs for {hashed_email}: {e}")
             continue
 
     return all_verified_docs
