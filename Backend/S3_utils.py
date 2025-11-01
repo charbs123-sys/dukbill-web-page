@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from botocore.exceptions import ClientError
 from S3_init import s3, bucket_name
 from config import CLOUDFRONT_DOMAIN
+import logging
 
 def list_files(prefix: str = ""):
     response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
@@ -85,3 +86,36 @@ def ensure_json_file_exists(hashed_email: str, endpoint: str) -> None:
             )
         else:
             raise HTTPException(status_code=500, detail=f"Unexpected S3 error checking '{key}': {e}")
+        
+def list_s3_files(hashed_email: str, path: str) -> list:
+    """
+    List all files in an S3 directory for a given hashed_email.
+    
+    Args:
+        hashed_email: The hashed email identifier
+        path: The S3 path (e.g., "/verified_ids")
+    
+    Returns:
+        List of filenames (not full keys) in the directory
+    """
+    try:
+        # Construct the full S3 prefix
+        prefix = f"{hashed_email}{path}/"
+        
+        # List objects in S3
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+        
+        # Extract filenames from the keys
+        files = []
+        for obj in response.get("Contents", []):
+            key = obj["Key"]
+            # Get just the filename (last part after the final /)
+            filename = key.split("/")[-1]
+            if filename:  # Skip empty strings (directories)
+                files.append(filename)
+        
+        return files
+    
+    except Exception as e:
+        logging.error(f"Error listing S3 files for {hashed_email}{path}: {e}")
+        return []
