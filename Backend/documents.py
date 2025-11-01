@@ -486,3 +486,4 @@ async def upload_bytes_to_s3(file_bytes: bytes, s3_key: str, bucket_name: str = 
     except Exception as e:
         print(f"❌ Unexpected error uploading to S3: {e}")
         return None
+    
