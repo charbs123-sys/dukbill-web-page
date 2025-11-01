@@ -203,7 +203,7 @@ async def notify_callback(request: Request):
                             front_image_pdf = jpg_to_pdf_simple(front_image_jpg)
                             if front_image_pdf:
                                 # Option 2: Upload bytes directly (more efficient)
-                                s3_key = f"{hashed_user_email}/verified_ids/{reference}_front.pdf"
+                                s3_key = f"{hashed_user_email}/verified_ids/{status_response["selected_type"][0]}_front.pdf"
                                 s3_url = await upload_bytes_to_s3(front_image_pdf, s3_key)
                                 
                                 if s3_url:
@@ -215,7 +215,7 @@ async def notify_callback(request: Request):
                         if back_image_jpg:
                             back_image_pdf = jpg_to_pdf_simple(back_image_jpg)
                             if back_image_pdf:
-                                s3_key = f"{hashed_user_email}/verified_ids/{reference}_back.pdf"
+                                s3_key = f"{hashed_user_email}/verified_ids/{status_response["selected_type"][1]}_back.pdf"
                                 s3_url = await upload_bytes_to_s3(back_image_pdf, s3_key)
                                 
                                 if s3_url:
