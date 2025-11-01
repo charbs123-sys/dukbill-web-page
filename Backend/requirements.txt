@@ -17,3 +17,4 @@ redis
 sqlalchemy
 Pillow 
 reportlab
+httpx
