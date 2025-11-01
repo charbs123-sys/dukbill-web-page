@@ -481,8 +481,8 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     documents = get_client_category_documents(client["client_id"], emails, category)
 
-    if category == "Identity Verification":
-        verified_docs = get_client_verified_ids_documents(client["client_id"], emails)
+    if category in ["Driving License", "Id Card", "Passport"]:
+        verified_docs = get_client_verified_ids_documents(client["client_id"], emails, category)
         documents.extend(verified_docs)
 
     return documents
@@ -627,13 +627,22 @@ async def delete_client_document_endpoint(
         raise HTTPException(status_code=404, detail="User not found")
 
     data = await request.json()
+    
     threadid = data.get("id")
     hashed_email = data.get("hashed_email")
 
     if not threadid or not hashed_email:
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
-
-    delete_client_document(hashed_email, threadid)
+    
+    # Known identity document types
+    identity_doc_types = ["driving_license", "id_card", "passport"]
+    
+    # Check if it's a verified identity document by checking the id
+    if threadid in identity_doc_types:
+        delete_client_document_identity(threadid, hashed_email)
+    else:
+        delete_client_document(hashed_email, threadid)
+    
     return {"status": "success"}
 
 @app.post("/upload/document/card")

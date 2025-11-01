@@ -81,36 +81,65 @@ def get_client_verified_ids_dashboard(client_id: str, emails: list) -> list:
             files = list_s3_files(hashed_email, verified_ids_path)
             
             pdf_files = [f for f in files if f.endswith('.pdf')]
-            if pdf_files:
+            
+            # Group files by document type
+            doc_type_map = {}
+            for filename in pdf_files:
+                # Extract document type (everything before _front or _back)
+                if "_front.pdf" in filename:
+                    doc_type = filename.replace("_front.pdf", "")
+                elif "_back.pdf" in filename:
+                    doc_type = filename.replace("_back.pdf", "")
+                else:
+                    # For passport or other single-sided docs
+                    doc_type = filename.replace(".pdf", "")
+                
+                if doc_type not in doc_type_map:
+                    doc_type_map[doc_type] = []
+                doc_type_map[doc_type].append(filename)
+            
+            # Create an entry for each document type
+            for doc_type, file_list in doc_type_map.items():
                 all_documents.append({
                     "hashed_email": hashed_email,
-                    "broker_document_category": "Verified IDs",
-                    "files": pdf_files
+                    "doc_type": doc_type,
+                    "files": file_list
                 })
         except Exception:
             continue
 
+    # Group by document type for categories
+    categories_map = {}
+    for doc in all_documents:
+        doc_type = doc.get("doc_type")
+        formatted_type = doc_type.replace("_", " ").title()  # e.g., "Driving License"
+        
+        if formatted_type not in categories_map:
+            categories_map[formatted_type] = []
+        
+        categories_map[formatted_type].append({
+            "id": doc_type,  # e.g., "driving_license"
+            "company_name": formatted_type,  # e.g., "Driving License"
+            "payment_amount": 0,
+            "due_date": None,
+            "hashed_email": doc.get("hashed_email"),
+            "files": doc.get("files", []),
+            "file_count": len(doc.get("files", []))
+        })
+
     headings = []
-    if all_documents:
-        cards = [
+    if categories_map:
+        categories = [
             {
-                "id": doc.get("hashed_email"),
-                "company_name": "Identity Verification",  # Add this
-                "payment_amount": 0,  # Add this
-                "due_date": None,  # Add this
-                "hashed_email": doc.get("hashed_email"),
-                "files": doc.get("files", []),  # Keep this for reference
-                "file_count": len(doc.get("files", []))  # Keep this for reference
+                "category_name": category_name,
+                "cards": cards
             }
-            for doc in all_documents
+            for category_name, cards in categories_map.items()
         ]
         
         headings.append({
             "heading": "Identity Verification",
-            "categories": [{
-                "category_name": "Identity Verification",
-                "cards": cards
-            }],
+            "categories": categories,
             "missing_categories": []
         })
     
@@ -172,14 +201,33 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
             })
     return all_filtered_docs
 
-def get_client_verified_ids_documents(client_id: str, emails: list) -> list:
+def get_client_verified_ids_documents(client_id: str, emails: list, category: str) -> list:
     """
-    Returns all verified ID documents for a client across multiple emails.
+    Returns all verified ID documents for a client across multiple emails filtered by category.
+    
+    Args:
+        client_id: The client identifier
+        emails: List of email addresses
+        category: The document category to filter (e.g., "Driving License", "Id Card", "Passport")
     """
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
 
     all_verified_docs = []
+    
+    # Convert category to the file prefix format (e.g., "Driving License" -> "driving_license")
+    category_to_prefix = {
+        "Driving License": "driving_license",
+        "Id Card": "id_card",
+        "Passport": "passport"
+    }
+    
+    # Get the prefix for the requested category
+    doc_type_prefix = category_to_prefix.get(category)
+    
+    # If category is not a verified ID type, return empty list
+    if not doc_type_prefix:
+        return []
 
     for email_entry in emails:
         email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
@@ -192,34 +240,22 @@ def get_client_verified_ids_documents(client_id: str, emails: list) -> list:
 
             pdf_keys = [obj["Key"] for obj in files if obj["Key"].endswith('.pdf')]
             
-            # Group PDFs by document type (e.g., driving_license, id_card, passport)
-            doc_type_map = {}
+            # Filter PDFs by the requested document type
+            doc_type_keys = []
             for key in pdf_keys:
                 filename = key.split("/")[-1]
-                # Extract document type (everything before _front or _back)
-                if "_front.pdf" in filename:
-                    doc_type = filename.replace("_front.pdf", "")
-                elif "_back.pdf" in filename:
-                    doc_type = filename.replace("_back.pdf", "")
-                else:
-                    # For passport or other single-sided docs
-                    doc_type = filename.replace(".pdf", "")
-                
-                if doc_type not in doc_type_map:
-                    doc_type_map[doc_type] = []
-                doc_type_map[doc_type].append(key)
+                # Check if filename starts with the requested doc_type_prefix
+                if filename.startswith(doc_type_prefix):
+                    doc_type_keys.append(key)
             
-            # Create a separate entry for each document type
-            for doc_type, keys in doc_type_map.items():
-                urls = [get_cloudfront_url(k) for k in keys]
-                
-                # Format the document type nicely (e.g., driving_license -> Driving License)
-                formatted_name = doc_type.replace("_", " ").title()
+            # Only create entry if matching files found
+            if doc_type_keys:
+                urls = [get_cloudfront_url(k) for k in doc_type_keys]
                 
                 all_verified_docs.append({
-                    "id": f"{hashed_email}_{doc_type}",  # Unique ID per doc type
+                    "id": f"{hashed_email}_{doc_type_prefix}",  # Unique ID per doc type
                     "category": "Verified IDs",
-                    "company": formatted_name,  # e.g., "Driving License", "Id Card", "Passport"
+                    "company": category,  # Use the formatted category name
                     "amount": 0,
                     "due_date": None,
                     "url": urls,
@@ -332,6 +368,45 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
             filename = key.split("/")[-1]
             if filename.startswith(threadid + "_") or filename.startswith(threadid):
                 s3.delete_object(Bucket=bucket_name, Key=key)
+
+
+def delete_client_document_identity(doc_name: str, hashed_email: str):
+    """
+    Delete verified identity documents (both front and back) from S3.
+    
+    Args:
+        doc_name: The base document name (e.g., "driving_license", "id_card")
+        hashed_email: The hashed email identifier
+    """
+    try:
+        # Construct the S3 keys for front and back
+        front_key = f"{hashed_email}/verified_ids/{doc_name}_front.pdf"
+        back_key = f"{hashed_email}/verified_ids/{doc_name}_back.pdf"
+        
+        # List of keys to delete
+        keys_to_delete = [front_key, back_key]
+        
+        # Delete each file
+        deleted_count = 0
+        for key in keys_to_delete:
+            try:
+                s3.delete_object(Bucket=bucket_name, Key=key)
+                logging.info(f"✓ Deleted {key}")
+                deleted_count += 1
+            except Exception as e:
+                # File might not exist (e.g., passport has no back)
+                logging.warning(f"Could not delete {key}: {e}")
+        
+        if deleted_count > 0:
+            logging.info(f"✓ Deleted {deleted_count} file(s) for {doc_name}")
+            return True
+        else:
+            logging.warning(f"No files deleted for {doc_name}")
+            return False
+            
+    except Exception as e:
+        logging.error(f"Error deleting identity documents: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete identity documents")
 
 
 async def upload_client_document(client_email: str, category: str, company: str, amount: float, date: str, file: UploadFile) -> dict:
