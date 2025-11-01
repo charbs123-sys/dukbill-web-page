@@ -16,6 +16,7 @@ from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for
 from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
 from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
+from id_helpers import *
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -151,96 +152,29 @@ async def notify_callback(request: Request):
         # Verify signature
         SECRET_KEY = os.environ.get("SHUFTI_SECRET_KEY")
         sp_signature = request.headers.get('signature', '')
-        secret_key_hash = hashlib.sha256(SECRET_KEY.encode()).hexdigest()
-        calculated_signature = hashlib.sha256(
-            raw_data + secret_key_hash.encode()
-        ).hexdigest()
         
-        if sp_signature != calculated_signature:
+        if not verify_signature(raw_data, sp_signature, SECRET_KEY):
             raise HTTPException(status_code=401, detail="Invalid signature")
         
         reference = response_data.get('reference')
         event = response_data.get('event')
         
-        print(f"\n{'='*60}")
-        print(f"Callback received: {event} for {reference}")
-        print(f"{'='*60}")
+        log_callback_event(event, reference)
         
         # Find the user associated with this verification
-        verification_state = verification_states.get(reference)
+        verification_state = get_verification_state(reference)
         
         if not verification_state:
-            print(f"⚠️ No user found for reference: {reference}")
             # Still return 200 to acknowledge callback
             return {"status": "success"}
         
-        user_id = verification_state["user_id"]
-        auth0_id = verification_state["auth0_id"]
-        user_email = verification_state["email"]
-        hashed_user_email = hash_email(user_email)
-        print(f"User ID: {user_id}, Auth0 ID: {auth0_id}")
-        # If verification accepted, fetch proof images
+        # Handle different event types
         if event == 'verification.accepted':
-            print("Fetching proof images from Status API...")
-            
-            status_response = get_verification_status_with_proofs(reference)
-            if status_response:
-                proofs = status_response.get('proofs', {})
-                access_token = proofs.get('access_token')
-                
-                if proofs and access_token:
-                    document_proofs = proofs.get('document', {})
-                    front_url = document_proofs.get('proof')
-                    back_url = document_proofs.get('additional_proof')
-                    
-                    print(f"Front proof URL: {front_url}")
-                    print(f"Back proof URL: {back_url}")
-                    
-                    # Download front image
-                    if front_url:
-                        front_image_jpg = download_proof_image(front_url, access_token)
-                        if front_image_jpg:
-                            front_image_pdf = jpg_to_pdf_simple(front_image_jpg)
-                            if front_image_pdf:
-
-                                s3_key = f"{hashed_user_email}/verified_ids/{status_response["verification_data"]["document"]["selected_type"][0]}_front.pdf"
-                                s3_url = await upload_bytes_to_s3(front_image_pdf, s3_key)
-                                
-                                if s3_url:
-                                    print(f"✅ Front image uploaded: {s3_url}")
-                        
-                    # Download back image
-                    if back_url:
-                        back_image_jpg = download_proof_image(back_url, access_token)
-                        if back_image_jpg:
-                            back_image_pdf = jpg_to_pdf_simple(back_image_jpg)
-                            if back_image_pdf:
-                                s3_key = f"{hashed_user_email}/verified_ids/{status_response["verification_data"]["document"]["selected_type"][0]}_back.pdf"
-                                s3_url = await upload_bytes_to_s3(back_image_pdf, s3_key)
-                                
-                                if s3_url:
-                                    print(f"✅ Back image uploaded: {s3_url}")
-                        
-                    # Store verification data in database
-                    verification_data = response_data.get('verification_data', {})
-                    # TODO: Save to database linked to user_id
-                    
-                    print(f"✅ Verification complete for user {user_id}")
-                    
-                    # Clean up the state
-                    del verification_states[reference]
-                else:
-                    print("⚠️ No proofs or access_token in status response")
-            else:
-                print("⚠️ Failed to get status response")
+            await handle_verification_accepted(reference, verification_state)
+            del verification_states[reference]
         
         elif event == 'verification.declined':
-            print(f"❌ Verification declined for user {user_id}")
-            declined_reason = response_data.get('declined_reason', 'Unknown')
-            print(f"Reason: {declined_reason}")
-            # TODO: Update database with declined status
-            
-            # Clean up the state
+            handle_verification_declined(verification_state["user_id"], response_data)
             del verification_states[reference]
         
         return {"status": "success"}
