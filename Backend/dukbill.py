@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Body, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 
 from pydantic import BaseModel
 from basiq_api import BasiqAPI
@@ -17,6 +17,8 @@ from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
 from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
 from id_helpers import *
+from xero_helpers import *
+from xero_pdf_generation import *
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -27,6 +29,7 @@ import os
 from typing import List, Dict, Any
 import secrets
 import time
+from urllib.parse import urlencode
 
 oauth_states = {}
 
@@ -185,7 +188,179 @@ async def notify_callback(request: Request):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# ------------------------
+# Xero
+# ------------------------
 
+session_state = {}
+SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
+
+@app.get("/connect/xero")
+async def connect_xero(user=Depends(get_current_user)):
+    """Initiate Xero OAuth flow"""
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    print(emails)
+    hashed_email = hash_email(emails[0]["email_address"])
+    print("entered")
+
+    # Get user info
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    state = secrets.token_urlsafe(24)
+    session_state[state] = {"timestamp": int(time.time()), "hashed_email": hashed_email}
+    
+    params = {
+        "response_type": "code",
+        "client_id": XERO_CLIENT_ID,
+        "redirect_uri": XERO_REDIRECT_URI,
+        "scope": SCOPES,
+        "state": state,
+    }
+    print("this is state before")
+    print(state)
+    
+    auth_url = f"{AUTH_URL}?{urlencode(params)}"
+    return {"auth_url": auth_url}
+
+
+@app.get("/callback/xero")
+async def callback_xero(code: str = "", state: str = ""):
+    """Handle OAuth callback from Xero"""
+    global tenant_id
+    
+    # Verify state
+    if state not in session_state:
+        raise HTTPException(400, "Invalid state")
+    hashed_email = session_state[state]["hashed_email"]
+    session_state.pop(state)
+    
+    # Exchange code for tokens
+    token_response = requests.post(
+        TOKEN_URL,
+        headers={
+            "Authorization": f"Basic {get_basic_auth()}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": XERO_REDIRECT_URI
+        },
+        timeout=10,
+    )
+    
+    if token_response.status_code != 200:
+        raise HTTPException(400, f"Token exchange failed: {token_response.text}")
+    
+    # Save tokens
+    token_data = token_response.json()
+    tokens["access_token"] = token_data["access_token"]
+    tokens["refresh_token"] = token_data.get("refresh_token")
+    tokens["expires_at"] = int(time.time()) + int(token_data.get("expires_in", 1800))
+    tokens["scope"] = token_data.get("scope", "")
+    
+    # Get tenant/organization connections
+    connections_response = requests.get(
+        "https://api.xero.com/connections",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        timeout=10,
+    )
+    
+    if connections_response.status_code != 200:
+        raise HTTPException(400, f"Failed to get connections: {connections_response.text}")
+    
+    connections = connections_response.json()
+    if not connections:
+        return RedirectResponse(
+            url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
+            status_code=303
+        )
+    
+    # Use first organization
+    tenant_id = connections[0]["tenantId"]
+    org_name = connections[0]["tenantName"]
+    print('before fetch')
+    # Fetch all data
+    all_data = fetch_all_data(tenant_id)
+    print("after fetch")
+    # Transform to preview format for PDF generation
+    preview = {
+        "settings": {
+            "accounts": all_data["data"].get("accounts", [None])[0] if all_data["data"].get("accounts") else None,
+            "accounts_total": len(all_data["data"].get("accounts", [])),
+            "tax_rates": all_data["data"].get("tax_rates", [None])[0] if all_data["data"].get("tax_rates") else None,
+            "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
+            "tracking_categories": all_data["data"].get("tracking_categories", [None])[0] if all_data["data"].get("tracking_categories") else None,
+            "tracking_categories_total": len(all_data["data"].get("tracking_categories", [])),
+        },
+        "transactions": {
+            "bank_transactions": all_data["data"].get("bank_transactions", [None])[0] if all_data["data"].get("bank_transactions") else None,
+            "bank_transactions_total": len(all_data["data"].get("bank_transactions", [])),
+            "payments": all_data["data"].get("payments", [None])[0] if all_data["data"].get("payments") else None,
+            "payments_total": len(all_data["data"].get("payments", [])),
+            "credit_notes": all_data["data"].get("credit_notes", [None])[0] if all_data["data"].get("credit_notes") else None,
+            "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
+            "manual_journals": all_data["data"].get("manual_journals", [None])[0] if all_data["data"].get("manual_journals") else None,
+            "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
+            "overpayments": all_data["data"].get("overpayments", [None])[0] if all_data["data"].get("overpayments") else None,
+            "overpayments_total": len(all_data["data"].get("overpayments", [])),
+            "prepayments": all_data["data"].get("prepayments", [None])[0] if all_data["data"].get("prepayments") else None,
+            "prepayments_total": len(all_data["data"].get("prepayments", [])),
+            "invoices": all_data["data"].get("invoices", [None])[0] if all_data["data"].get("invoices") else None,
+            "invoices_total": len(all_data["data"].get("invoices", [])),
+            "bank_transfers": all_data["data"].get("bank_transfers", [None])[0] if all_data["data"].get("bank_transfers") else None,
+            "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
+        },
+        "payroll": {
+            "employees": all_data["data"].get("employees", [None])[0] if all_data["data"].get("employees") else None,
+            "employees_total": len(all_data["data"].get("employees", [])),
+            "payruns": all_data["data"].get("payruns", [None])[0] if all_data["data"].get("payruns") else None,
+            "payruns_total": len(all_data["data"].get("payruns", [])),
+            "payslips": all_data["data"].get("payslips", [None])[0] if all_data["data"].get("payslips") else None,
+            "payslips_total": len(all_data["data"].get("payslips", [])),
+        },
+        "reports": {
+            "profit_loss": all_data["data"].get("profit_loss"),
+            "balance_sheet": all_data["data"].get("balance_sheet"),
+        }
+    }
+    
+    result = {
+        "status": "success",
+        "organization": org_name,
+        "tenant_id": tenant_id,
+        "preview": preview
+    }
+    
+    if all_data.get("errors"):
+        result["errors"] = all_data["errors"]
+    
+    # Generate all PDF reports
+    try:
+        s3_keys = []
+        s3_keys.append(generate_accounts_report(result, "xero_accounts_report.pdf", hashed_email))
+        s3_keys.append(generate_transactions_report(result, "xero_transactions_report.pdf", hashed_email))
+        s3_keys.append(generate_payments_report(result, "xero_payments_report.pdf", hashed_email))
+        s3_keys.append(generate_credit_notes_report(result, "xero_credit_notes_report.pdf", hashed_email))
+        s3_keys.append(generate_payroll_report(result, "xero_payroll_report.pdf", hashed_email))
+        s3_keys.append(generate_invoices_report(result, "xero_invoices_report.pdf", hashed_email))
+        s3_keys.append(generate_bank_transfers_report(result, "xero_bank_transfers_report.pdf", hashed_email))
+        s3_keys.append(generate_reports_summary(result, "xero_financial_reports.pdf", hashed_email))
+        
+        result["pdf_reports"] = s3_keys
+        result["s3_bucket"] = bucket_name
+    except Exception as e:
+        result["pdf_error"] = str(e)
+
+    return RedirectResponse(
+        url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
+        status_code=303
+    )
 
 # ------------------------
 # Auth / User Routes
@@ -399,9 +574,11 @@ async def get_client_documents(user=Depends(get_current_user)):
     emails = get_client_emails(client["client_id"])
     headings = get_client_dashboard(client["client_id"], emails)
     verified_headings = get_client_verified_ids_dashboard(client["client_id"], emails)
-
+    xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], emails)
     if verified_headings:
         headings.extend(verified_headings)
+    if xero_verified_documents:
+        headings.extend(xero_verified_documents)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/clients/category/documents")
@@ -418,9 +595,15 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     if category in ["Driving License", "Id Card", "Passport"]:
         verified_docs = get_client_verified_ids_documents(client["client_id"], emails, category)
         documents.extend(verified_docs)
+    
+    # Check if category is a Xero report type
+    if category in ["Accounts Report", "Bank Transfers Report", "Credit Notes Report", 
+                    "Financial Reports", "Invoices Report", "Payments Report", 
+                    "Payroll Report", "Transactions Report"]:
+        xero_docs = get_client_xero_documents(client["client_id"], emails, category)
+        documents.extend(xero_docs)
 
     return documents
-
 @app.post("/broker/access")
 async def toggle_broker_access_route(user=Depends(get_current_user)):
     claims, _ = user
@@ -559,21 +742,34 @@ async def delete_client_document_endpoint(
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-
     data = await request.json()
     
     threadid = data.get("id")
     hashed_email = data.get("hashed_email")
-
     if not threadid or not hashed_email:
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
     
     # Known identity document types
     identity_doc_types = ["driving_license", "id_card", "passport"]
     
+    # Known Xero report types
+    xero_report_types = [
+        "xero_accounts_report",
+        "xero_bank_transfers_report",
+        "xero_credit_notes_report",
+        "xero_financial_reports",
+        "xero_invoices_report",
+        "xero_payments_report",
+        "xero_payroll_report",
+        "xero_transactions_report"
+    ]
+    
     # Check if it's a verified identity document by checking the id
     if threadid in identity_doc_types:
         delete_client_document_identity(threadid, hashed_email)
+    # Check if it's a Xero report
+    elif threadid in xero_report_types:
+        delete_client_xero_report(threadid, hashed_email)
     else:
         delete_client_document(hashed_email, threadid)
     

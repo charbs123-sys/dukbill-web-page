@@ -119,3 +119,21 @@ def list_s3_files(hashed_email: str, path: str) -> list:
     except Exception as e:
         logging.error(f"Error listing S3 files for {hashed_email}{path}: {e}")
         return []
+
+def upload_pdf_to_s3(buffer, hashed_email, filename):
+    """Upload PDF buffer to S3"""
+    buffer.seek(0)
+    s3_key = f"{hashed_email}/xero_reports/{filename}"
+    
+    try:
+        s3.upload_fileobj(
+            buffer,
+            bucket_name,
+            s3_key,
+            ExtraArgs={'ContentType': 'application/pdf'}
+        )
+        print(f"✓ Uploaded to S3: s3://{bucket_name}/{s3_key}")
+        return s3_key
+    except ClientError as e:
+        print(f"✗ Failed to upload {filename}: {str(e)}")
+        raise
