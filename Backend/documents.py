@@ -145,6 +145,102 @@ def get_client_verified_ids_dashboard(client_id: str, emails: list) -> list:
     
     return headings
 
+def get_xero_verified_documents_dashboard(client_id: str, emails: list) -> list:
+    """
+    Returns a structured dashboard for a client based on Xero reports.
+    """
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+    
+    # Define expected Xero report types
+    expected_reports = [
+        "xero_accounts_report.pdf",
+        "xero_bank_transfers_report.pdf",
+        "xero_credit_notes_report.pdf",
+        "xero_financial_reports.pdf",
+        "xero_invoices_report.pdf",
+        "xero_payments_report.pdf",
+        "xero_payroll_report.pdf",
+        "xero_transactions_report.pdf"
+    ]
+    
+    all_documents = []
+    
+    for email_entry in emails:
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
+        
+        try:
+            from S3_utils import list_s3_files
+            xero_reports_path = "/xero_reports"
+            files = list_s3_files(hashed_email, xero_reports_path)
+            
+            # Filter for PDF files only
+            pdf_files = [f for f in files if f.endswith('.pdf')]
+            
+            # Group by report type
+            doc_type_map = {}
+            for filename in pdf_files:
+                # Extract just the filename (remove path if present)
+                basename = filename.split('/')[-1]
+                
+                # Check if it matches any expected report name
+                if basename in expected_reports:
+                    # Extract report type (keep full name without .pdf)
+                    doc_type = basename.replace(".pdf", "")
+                    
+                    if doc_type not in doc_type_map:
+                        doc_type_map[doc_type] = []
+                    doc_type_map[doc_type].append(filename)
+            
+            # Create an entry for each document type
+            for doc_type, file_list in doc_type_map.items():
+                all_documents.append({
+                    "hashed_email": hashed_email,
+                    "doc_type": doc_type,
+                    "files": file_list
+                })
+        except Exception:
+            continue
+    
+    # Group by document type for categories
+    categories_map = {}
+    for doc in all_documents:
+        doc_type = doc.get("doc_type")
+        # Format: "xero_accounts_report" -> "Accounts Report"
+        formatted_type = doc_type.replace("xero_", "").replace("_", " ").title()
+        
+        if formatted_type not in categories_map:
+            categories_map[formatted_type] = []
+        
+        categories_map[formatted_type].append({
+            "id": doc_type,  # e.g., "xero_accounts_report"
+            "company_name": formatted_type,  # e.g., "Accounts Report"
+            "payment_amount": 0,
+            "due_date": None,
+            "hashed_email": doc.get("hashed_email"),
+            "files": doc.get("files", []),
+            "file_count": len(doc.get("files", []))
+        })
+    
+    headings = []
+    if categories_map:
+        categories = [
+            {
+                "category_name": category_name,
+                "cards": cards
+            }
+            for category_name, cards in categories_map.items()
+        ]
+        
+        headings.append({
+            "heading": "Xero Reports",
+            "categories": categories,
+            "missing_categories": []
+        })
+    
+    return headings
+
 
 def get_client_category_documents(client_id: str, emails: list, category: str) -> list:
     """
@@ -266,6 +362,79 @@ def get_client_verified_ids_documents(client_id: str, emails: list, category: st
             continue
 
     return all_verified_docs
+
+
+def get_client_xero_documents(client_id: str, emails: list, category: str) -> list:
+    """
+    Returns all Xero report documents for a client across multiple emails filtered by category.
+    
+    Args:
+        client_id: The client identifier
+        emails: List of email addresses
+        category: The report category to filter (e.g., "Accounts Report", "Invoices Report")
+    """
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+
+    all_xero_docs = []
+    
+    # Convert category to the file name format (e.g., "Accounts Report" -> "xero_accounts_report.pdf")
+    category_to_filename = {
+        "Accounts Report": "xero_accounts_report.pdf",
+        "Bank Transfers Report": "xero_bank_transfers_report.pdf",
+        "Credit Notes Report": "xero_credit_notes_report.pdf",
+        "Financial Reports": "xero_financial_reports.pdf",
+        "Invoices Report": "xero_invoices_report.pdf",
+        "Payments Report": "xero_payments_report.pdf",
+        "Payroll Report": "xero_payroll_report.pdf",
+        "Transactions Report": "xero_transactions_report.pdf"
+    }
+    
+    # Get the filename for the requested category
+    report_filename = category_to_filename.get(category)
+    
+    # If category is not a Xero report type, return empty list
+    if not report_filename:
+        return []
+
+    for email_entry in emails:
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
+
+        try:
+            prefix = f"{hashed_email}/xero_reports/"
+            s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+            files = s3_objects.get("Contents", [])
+
+            pdf_keys = [obj["Key"] for obj in files if obj["Key"].endswith('.pdf')]
+            
+            # Filter PDFs by the requested report filename
+            matching_keys = []
+            for key in pdf_keys:
+                filename = key.split("/")[-1]
+                # Check if filename matches the requested report
+                if filename == report_filename:
+                    matching_keys.append(key)
+            
+            # Only create entry if matching files found
+            if matching_keys:
+                urls = [get_cloudfront_url(k) for k in matching_keys]
+                
+                all_xero_docs.append({
+                    "id": f"{hashed_email}_{report_filename.replace('.pdf', '')}",  # Unique ID per report
+                    "category": "Xero Reports",
+                    "company": category,  # Use the formatted category name
+                    "amount": 0,
+                    "due_date": None,
+                    "url": urls,
+                    "hashed_email": hashed_email,
+                })
+        except Exception as e:
+            logging.error(f"Error fetching Xero reports for {hashed_email}: {e}")
+            continue
+
+    return all_xero_docs
+
 
 
 def move_pdfs_to_new_category(hashed_email: str, threadid: str, old_category: str, new_category: str) -> None:
@@ -407,6 +576,31 @@ def delete_client_document_identity(doc_name: str, hashed_email: str):
     except Exception as e:
         logging.error(f"Error deleting identity documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete identity documents")
+
+def delete_client_xero_report(report_name: str, hashed_email: str):
+    """
+    Delete Xero report document from S3.
+    
+    Args:
+        report_name: The report name (e.g., "xero_accounts_report", "xero_invoices_report")
+        hashed_email: The hashed email identifier
+    """
+    try:
+        # Construct the S3 key
+        report_key = f"{hashed_email}/xero_reports/{report_name}.pdf"
+        
+        # Delete the file
+        try:
+            s3.delete_object(Bucket=bucket_name, Key=report_key)
+            logging.info(f"✓ Deleted {report_key}")
+            return True
+        except Exception as e:
+            logging.error(f"Could not delete {report_key}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to delete Xero report: {e}")
+            
+    except Exception as e:
+        logging.error(f"Error deleting Xero report: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete Xero report")
 
 
 async def upload_client_document(client_email: str, category: str, company: str, amount: float, date: str, file: UploadFile) -> dict:
