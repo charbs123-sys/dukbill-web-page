@@ -4,6 +4,11 @@ import phonenumbers
 import hashlib
 import io
 
+from PIL import Image
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.pdfgen import canvas
+from io import BytesIO
+
 def parse_amount(amount):
     if isinstance(amount, str):
         cleaned = amount.replace("$", "").replace(",", "")
@@ -52,3 +57,32 @@ def get_email_domain(email: str):
     
 def hash_email(email):
     return hashlib.sha256(email.encode('utf-8')).hexdigest()
+
+
+def jpg_to_pdf_simple(image_bytes: bytes) -> bytes:
+    """
+    Simpler conversion using PIL's built-in PDF support
+    
+    Args:
+        image_bytes: JPG image as bytes
+    
+    Returns:
+        bytes: PDF file as bytes
+    """
+    try:
+        # Open image
+        img = Image.open(BytesIO(image_bytes))
+        
+        # Convert to RGB
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Save as PDF to BytesIO
+        pdf_buffer = BytesIO()
+        img.save(pdf_buffer, 'PDF', resolution=100.0)
+        
+        return pdf_buffer.getvalue()
+        
+    except Exception as e:
+        print(f"❌ Error converting JPG to PDF: {e}")
+        return None

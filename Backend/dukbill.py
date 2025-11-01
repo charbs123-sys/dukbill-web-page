@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from basiq_api import BasiqAPI
 
-from auth import verify_token, verify_google_token
+from auth import verify_token, verify_google_token, verify_xero_auth
 from users import *
 from documents import *
 from db_init import initialize_database
@@ -15,7 +15,7 @@ from S3_utils import *
 from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
-from shufti import shufti_url, jpg_to_pdf_simple
+from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -64,6 +64,9 @@ security = HTTPBearer()
 # ------------------------
 class GoogleTokenRequest(BaseModel):
     googleToken: str
+
+class XeroAuthRequest(BaseModel):
+    code: str
 
 # ------------------------
 # Dependencies
@@ -121,8 +124,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to create verification")
     
     reference = response.get("reference")
-    print("this is response")
-    print(response)
+
     # Store the mapping of reference to user
     verification_states[reference] = {
         "user_id": user_obj["user_id"],
@@ -135,61 +137,6 @@ async def shufti_redirect(user=Depends(get_current_user)):
         "verification_url": response["verification_url"],
         "reference": reference
     }
-
-def get_verification_status_with_proofs(reference: str):
-    """Call Status API to get proof URLs and access token"""
-    url = 'https://api.shuftipro.com/status'
-    client_id = os.environ.get("SHUFTI_CLIENTID")
-    secret_key = os.environ.get("SHUFTI_SECRET_KEY")
-    
-    payload = {
-        "reference": reference
-    }
-    
-    auth = f'{client_id}:{secret_key}'
-    b64Val = base64.b64encode(auth.encode()).decode()
-    
-    response = requests.post(
-        url,
-        headers={
-            "Authorization": f"Basic {b64Val}",
-            "Content-Type": "application/json"
-        },
-        data=json.dumps(payload)
-    )
-    
-    # Verify signature
-    secret_key_hash = hashlib.sha256(secret_key.encode()).hexdigest()
-    calculated_signature = hashlib.sha256(
-        f"{response.content.decode()}{secret_key_hash}".encode()
-    ).hexdigest()
-    sp_signature = response.headers.get('Signature', "")
-    
-    if sp_signature == calculated_signature:
-        return response.json()
-    else:
-        print(f"Invalid signature in status response")
-        return None
-
-
-def download_proof_image(proof_url: str, access_token: str):
-    """Download proof image using access token"""
-    payload = {
-        "access_token": access_token
-    }
-    
-    response = requests.post(
-        proof_url,
-        json=payload,
-        headers={"Content-Type": "application/json"}
-    )
-    
-    if response.status_code == 200:
-        return response.content
-    else:
-        print(f"Failed to download proof: {response.status_code}")
-        return None
-
 
 @app.post('/profile/notifyCallback')
 async def notify_callback(request: Request):
@@ -228,13 +175,15 @@ async def notify_callback(request: Request):
         user_email = verification_state["email"]
         hashed_user_email = hash_email(user_email)
         print(f"User ID: {user_id}, Auth0 ID: {auth0_id}")
-        
+        print("this is response data")
+        print(response_data)
         # If verification accepted, fetch proof images
         if event == 'verification.accepted':
             print("Fetching proof images from Status API...")
             
             status_response = get_verification_status_with_proofs(reference)
-            
+            print("this is status response")
+            print(status_response)
             if status_response:
                 proofs = status_response.get('proofs', {})
                 access_token = proofs.get('access_token')
@@ -254,7 +203,7 @@ async def notify_callback(request: Request):
                             front_image_pdf = jpg_to_pdf_simple(front_image_jpg)
                             if front_image_pdf:
                                 # Option 2: Upload bytes directly (more efficient)
-                                s3_key = f"{hashed_user_email}/categorised/ID/{reference}_front.jpg"
+                                s3_key = f"{hashed_user_email}/verified_ids/{reference}_front.pdf"
                                 s3_url = await upload_bytes_to_s3(front_image_pdf, s3_key)
                                 
                                 if s3_url:
@@ -266,7 +215,7 @@ async def notify_callback(request: Request):
                         if back_image_jpg:
                             back_image_pdf = jpg_to_pdf_simple(back_image_jpg)
                             if back_image_pdf:
-                                s3_key = f"{hashed_user_email}/categorised/ID/{reference}_back.jpg"
+                                s3_key = f"{hashed_user_email}/verified_ids/{reference}_back.pdf"
                                 s3_url = await upload_bytes_to_s3(back_image_pdf, s3_key)
                                 
                                 if s3_url:
@@ -314,6 +263,36 @@ async def google_signup(req: GoogleTokenRequest):
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid Google token")
     return {"success": "User registered successfully"}
+
+@app.post("/api/xero-signup")
+async def xero_signup(req: XeroAuthRequest):
+    """
+    Exchange authorization code for tokens and get user info
+    Similar to your Google signup flow
+    """
+    user_data = await verify_xero_auth(req.code)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
+    
+    # user_data will contain email, name, xero_user_id, tenant_id
+    # Create/update user in your database here
+    
+    return {"success": "User registered successfully"}
+
+@app.post("/api/xero-signin")
+async def xero_signin(req: XeroAuthRequest):
+    """
+    Same flow as signup - Xero OAuth handles both
+    """
+    user_data = await verify_xero_auth(req.code)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
+    
+    # Look up existing user in your database
+    
+    return {"success": "User signed in successfully"}
+
+
 
 @app.post("/auth/client/register")
 async def register(user=Depends(get_current_user)):

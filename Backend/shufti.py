@@ -1,10 +1,7 @@
 import base64, requests, json, hashlib
 from random import randint
 import os
-from PIL import Image
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.pdfgen import canvas
-from io import BytesIO
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -69,30 +66,58 @@ def shufti_url(user_email: str, user_id: int):
         print(f'Invalid signature: {response.content}')
         return None
 
-def jpg_to_pdf_simple(image_bytes: bytes) -> bytes:
-    """
-    Simpler conversion using PIL's built-in PDF support
+def get_verification_status_with_proofs(reference: str):
+    """Call Status API to get proof URLs and access token"""
+    url = 'https://api.shuftipro.com/status'
+    client_id = os.environ.get("SHUFTI_CLIENTID")
+    secret_key = os.environ.get("SHUFTI_SECRET_KEY")
     
-    Args:
-        image_bytes: JPG image as bytes
+    payload = {
+        "reference": reference
+    }
     
-    Returns:
-        bytes: PDF file as bytes
-    """
-    try:
-        # Open image
-        img = Image.open(BytesIO(image_bytes))
-        
-        # Convert to RGB
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # Save as PDF to BytesIO
-        pdf_buffer = BytesIO()
-        img.save(pdf_buffer, 'PDF', resolution=100.0)
-        
-        return pdf_buffer.getvalue()
-        
-    except Exception as e:
-        print(f"❌ Error converting JPG to PDF: {e}")
+    auth = f'{client_id}:{secret_key}'
+    b64Val = base64.b64encode(auth.encode()).decode()
+    
+    response = requests.post(
+        url,
+        headers={
+            "Authorization": f"Basic {b64Val}",
+            "Content-Type": "application/json"
+        },
+        data=json.dumps(payload)
+    )
+    
+    # Verify signature
+    secret_key_hash = hashlib.sha256(secret_key.encode()).hexdigest()
+    calculated_signature = hashlib.sha256(
+        f"{response.content.decode()}{secret_key_hash}".encode()
+    ).hexdigest()
+    sp_signature = response.headers.get('Signature', "")
+    
+    if sp_signature == calculated_signature:
+        return response.json()
+    else:
+        print(f"Invalid signature in status response")
         return None
+
+
+def download_proof_image(proof_url: str, access_token: str):
+    """Download proof image using access token"""
+    payload = {
+        "access_token": access_token
+    }
+    
+    response = requests.post(
+        proof_url,
+        json=payload,
+        headers={"Content-Type": "application/json"}
+    )
+    
+    if response.status_code == 200:
+        return response.content
+    else:
+        print(f"Failed to download proof: {response.status_code}")
+        return None
+
+

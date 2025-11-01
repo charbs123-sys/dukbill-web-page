@@ -4,6 +4,17 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from fastapi import HTTPException
 from config import AUTH0_DOMAIN, AUTH0_AUDIENCE, GOOGLE_CLIENT_ID
+import os
+import httpx
+XERO_CLIENT_ID = os.getenv("XERO_CLIENT_ID")
+XERO_CLIENT_SECRET = os.getenv("XERO_CLIENT_SECRET")
+XERO_REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
+
+
+# Xero OAuth endpoints
+XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
+XERO_USERINFO_URL = "https://api.xero.com/api.xro/2.0/Organisation"
+XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 
 # ------------------------
 # Setup JWKS client for Auth0
@@ -60,4 +71,72 @@ def verify_google_token(token: str):
 
     except ValueError as e:
         print(f"[AUTH] Google token verification failed: {e}")
+        return None
+
+async def verify_xero_auth(code: str):
+    """
+    Verify Xero authorization code and return user information.
+    Similar to your verify_google_token function.
+    """
+    try:
+        print(f"[AUTH] Exchanging Xero authorization code for tokens...")
+        
+        # Step 1: Exchange code for tokens
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                XERO_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": XERO_REDIRECT_URI,
+                },
+                auth=(XERO_CLIENT_ID, XERO_CLIENT_SECRET),
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            
+            if token_response.status_code != 200:
+                print(f"[AUTH] Token exchange failed: {token_response.text}")
+                return None
+            
+            tokens = token_response.json()
+            access_token = tokens.get("access_token")
+            id_token = tokens.get("id_token")  # Contains user identity claims
+            
+            # Step 2: Decode ID token to get user info (email, name, etc.)
+            # Note: In production, verify the signature properly
+            user_claims = jwt.get_unverified_claims(id_token)
+            
+            # Step 3: Get Xero tenant (organization) connection
+            connections_response = await client.get(
+                XERO_CONNECTIONS_URL,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            
+            if connections_response.status_code != 200:
+                print(f"[AUTH] Failed to get Xero connections")
+                return None
+            
+            connections = connections_response.json()
+            
+            if not connections:
+                print("[AUTH] No Xero organizations connected")
+                return None
+            
+            # Usually take the first connection, or let user choose
+            tenant_id = connections[0]["tenantId"]
+            
+            user_data = {
+                "email": user_claims.get("email"),
+                "name": user_claims.get("name"),
+                "xero_user_id": user_claims.get("xero_userid"),
+                "tenant_id": tenant_id,
+                "access_token": access_token,  # Store securely for API calls
+                "refresh_token": tokens.get("refresh_token")  # For token refresh
+            }
+            
+            print(f"[AUTH] Xero auth verified successfully for: {user_data['email']}")
+            return user_data
+            
+    except Exception as e:
+        print(f"[AUTH] Xero auth verification failed: {e}")
         return None
