@@ -328,9 +328,9 @@ async def connect_xero(user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
-    print(emails)
+
     hashed_email = hash_email(emails[0]["email_address"])
-    print("entered")
+
 
     # Get user info
     user_obj = find_user(auth0_id)
@@ -416,38 +416,63 @@ async def callback_xero(code: str = "", state: str = ""):
     # Transform to preview format for PDF generation
     preview = {
         "settings": {
-            "accounts": all_data["data"].get("accounts", [None])[0] if all_data["data"].get("accounts") else None,
+            "accounts": (all_data["data"].get("accounts") or [None])[0],
             "accounts_total": len(all_data["data"].get("accounts", [])),
-            "tax_rates": all_data["data"].get("tax_rates", [None])[0] if all_data["data"].get("tax_rates") else None,
+            "accounts_list": all_data["data"].get("accounts", []),
+
+            "tax_rates": (all_data["data"].get("tax_rates") or [None])[0],
             "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
-            "tracking_categories": all_data["data"].get("tracking_categories", [None])[0] if all_data["data"].get("tracking_categories") else None,
+            "tax_rates_list": all_data["data"].get("tax_rates", []),
+
+            "tracking_categories": (all_data["data"].get("tracking_categories") or [None])[0],
             "tracking_categories_total": len(all_data["data"].get("tracking_categories", [])),
+            "tracking_categories_list": all_data["data"].get("tracking_categories", []),
         },
         "transactions": {
-            "bank_transactions": all_data["data"].get("bank_transactions", [None])[0] if all_data["data"].get("bank_transactions") else None,
+            "bank_transactions": (all_data["data"].get("bank_transactions") or [None])[0],
             "bank_transactions_total": len(all_data["data"].get("bank_transactions", [])),
-            "payments": all_data["data"].get("payments", [None])[0] if all_data["data"].get("payments") else None,
+            "bank_transactions_list": all_data["data"].get("bank_transactions", []),
+
+            "payments": (all_data["data"].get("payments") or [None])[0],
             "payments_total": len(all_data["data"].get("payments", [])),
-            "credit_notes": all_data["data"].get("credit_notes", [None])[0] if all_data["data"].get("credit_notes") else None,
+            "payments_list": all_data["data"].get("payments", []),
+
+            "credit_notes": (all_data["data"].get("credit_notes") or [None])[0],
             "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
-            "manual_journals": all_data["data"].get("manual_journals", [None])[0] if all_data["data"].get("manual_journals") else None,
+            "credit_notes_list": all_data["data"].get("credit_notes", []),
+
+            "manual_journals": (all_data["data"].get("manual_journals") or [None])[0],
             "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
-            "overpayments": all_data["data"].get("overpayments", [None])[0] if all_data["data"].get("overpayments") else None,
+            "manual_journals_list": all_data["data"].get("manual_journals", []),
+
+            "overpayments": (all_data["data"].get("overpayments") or [None])[0],
             "overpayments_total": len(all_data["data"].get("overpayments", [])),
-            "prepayments": all_data["data"].get("prepayments", [None])[0] if all_data["data"].get("prepayments") else None,
+            "overpayments_list": all_data["data"].get("overpayments", []),
+
+            "prepayments": (all_data["data"].get("prepayments") or [None])[0],
             "prepayments_total": len(all_data["data"].get("prepayments", [])),
-            "invoices": all_data["data"].get("invoices", [None])[0] if all_data["data"].get("invoices") else None,
+            "prepayments_list": all_data["data"].get("prepayments", []),
+
+            "invoices": (all_data["data"].get("invoices") or [None])[0],
             "invoices_total": len(all_data["data"].get("invoices", [])),
-            "bank_transfers": all_data["data"].get("bank_transfers", [None])[0] if all_data["data"].get("bank_transfers") else None,
+            "invoices_list": all_data["data"].get("invoices", []),
+
+            "bank_transfers": (all_data["data"].get("bank_transfers") or [None])[0],
             "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
+            "bank_transfers_list": all_data["data"].get("bank_transfers", []),
         },
         "payroll": {
-            "employees": all_data["data"].get("employees", [None])[0] if all_data["data"].get("employees") else None,
+            "employees": (all_data["data"].get("employees") or [None])[0],
             "employees_total": len(all_data["data"].get("employees", [])),
-            "payruns": all_data["data"].get("payruns", [None])[0] if all_data["data"].get("payruns") else None,
+            "employees_list": all_data["data"].get("employees", []),
+
+            "payruns": (all_data["data"].get("payruns") or [None])[0],
             "payruns_total": len(all_data["data"].get("payruns", [])),
-            "payslips": all_data["data"].get("payslips", [None])[0] if all_data["data"].get("payslips") else None,
+            "payruns_list": all_data["data"].get("payruns", []),
+
+            "payslips": (all_data["data"].get("payslips") or [None])[0],
             "payslips_total": len(all_data["data"].get("payslips", [])),
+            "payslips_list": all_data["data"].get("payslips", []),
         },
         "reports": {
             "profit_loss": all_data["data"].get("profit_loss"),

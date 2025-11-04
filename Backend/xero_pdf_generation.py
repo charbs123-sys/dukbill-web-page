@@ -1,679 +1,545 @@
-import json
-from datetime import datetime
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-import io
-from datetime import datetime
-from reportlab.lib.pagesizes import letter, A4
-import os
+# xero_pdf_generators_aesthetic.py
 
-from S3_init import s3
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from S3_utils import upload_pdf_to_s3
 
-s3_client = s3
+# ---------- Shared aesthetic (matches MYOB) ----------
 
-def format_date(date_str):
-    """Format Xero date string to readable format"""
-    if not date_str:
-        return "N/A"
-    if isinstance(date_str, str) and "/Date(" in date_str:
-        timestamp = date_str.split("(")[1].split(")")[0]
-        if "+" in timestamp or "-" in timestamp:
-            timestamp = timestamp.split("+")[0].split("-")[0]
+def setup_styles():
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="caption", fontSize=8.5, textColor=colors.HexColor("#666")))
+    # Cell style for tables: smaller font, tighter leading, and wrapping enabled
+    styles.add(ParagraphStyle(
+        name="cell",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=11,
+        wordWrap="CJK"  # robust wrapping (incl. long tokens)
+    ))
+    return styles
+
+def add_table(story, title, rows, columns, col_widths, styles):
+    if not rows:
+        return
+    story.append(Paragraph(title, styles["Heading2"]))
+
+    # Wrap all data cells in Paragraphs so rows expand vertically as needed
+    def _wrap_row(row):
+        return [Paragraph("" if c is None else str(c), styles["cell"]) for c in row]
+
+    data = [columns] + [_wrap_row(r) for r in rows]
+
+    tbl = Table(data, colWidths=col_widths, hAlign="LEFT", repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f2f2f2")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.HexColor("#333")),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#ccc")),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTNAME", (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#fafafa")]),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),  # make cells grow downward
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 12))
+
+def safe_date(s):
+    if not s:
+        return ""
+    if isinstance(s, str) and "/Date(" in s:
+        ts = s.split("(")[1].split(")")[0]
+        if "+" in ts or "-" in ts:
+            ts = ts.split("+")[0].split("-")[0]
         try:
-            dt = datetime.fromtimestamp(int(timestamp) / 1000)
+            import datetime
+            dt = datetime.datetime.utcfromtimestamp(int(ts) / 1000)
             return dt.strftime("%Y-%m-%d")
         except:
-            return date_str
-    return date_str
+            return s[:10]
+    return str(s)[:10]
 
-
-def format_currency(amount):
-    """Format currency amounts"""
-    if amount is None:
-        return "$0.00"
+def money(x):
     try:
-        return f"${float(amount):,.2f}"
+        return f"{float(x):,.2f}"
     except:
-        return str(amount)
+        return "0.00"
 
+def short(s, n=50):
+    s = str(s or "")
+    return s if len(s) <= n else s[:n-1] + "…"
 
-def create_header(title, org_name):
-    """Create a header section for the report"""
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Title'],
-        fontSize=24,
-        textColor=colors.HexColor('#1a5490'),
-        spaceAfter=6,
+def mask(val, show_last=4):
+    val = str(val or "")
+    return ("*" * max(0, len(val) - show_last)) + val[-show_last:] if len(val) > show_last else val
+
+def _get(d, path, default=None):
+    cur = d
+    for k in path.split("/"):
+        if not isinstance(cur, dict) or k not in cur:
+            return default
+        cur = cur[k]
+    return cur
+
+def _new_doc(buffer):
+    return SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=36, rightMargin=36, topMargin=30, bottomMargin=30
     )
-    subtitle_style = ParagraphStyle(
-        'CustomSubtitle',
-        parent=styles['Normal'],
-        fontSize=12,
-        textColor=colors.grey,
-        spaceAfter=20,
-    )
-    
-    story = []
-    story.append(Paragraph(title, title_style))
-    story.append(Paragraph(f"Organization: {org_name}", subtitle_style))
-    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", subtitle_style))
-    story.append(Spacer(1, 0.2*inch))
-    
-    return story
 
+def _as_list(maybe_list_or_item):
+    if maybe_list_or_item is None:
+        return []
+    if isinstance(maybe_list_or_item, list):
+        return maybe_list_or_item
+    return [maybe_list_or_item]
+
+# ---------- 1) ACCOUNTS ----------
 
 def generate_accounts_report(data, output_file, hashed_email):
-    """Generate Accounts PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Chart of Accounts Report", org_name))
-    
-    accounts_total = data['preview']['settings'].get('accounts_total', 0)
-    story.append(Paragraph(f"<b>Total Accounts:</b> {accounts_total}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    sample_account = data['preview']['settings'].get('accounts')
-    if sample_account:
-        story.append(Paragraph("<b>Sample Account Details:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        account_data = [
-            ['Field', 'Value'],
-            ['Account Code', sample_account.get('Code', 'N/A')],
-            ['Account Name', sample_account.get('Name', 'N/A')],
-            ['Type', sample_account.get('Type', 'N/A')],
-            ['Class', sample_account.get('Class', 'N/A')],
-            ['Status', sample_account.get('Status', 'N/A')],
-            ['Tax Type', sample_account.get('TaxType', 'N/A')],
-            ['Currency', sample_account.get('CurrencyCode', 'N/A')],
-            ['Bank Account Number', sample_account.get('BankAccountNumber', 'N/A')],
-            ['Has Attachments', str(sample_account.get('HasAttachments', False))],
-        ]
-        
-        table = Table(account_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-    
-    story.append(Spacer(1, 0.3*inch))
-    tax_rates_total = data['preview']['settings'].get('tax_rates_total', 0)
-    story.append(Paragraph(f"<b>Tax Rates Available:</b> {tax_rates_total}", styles['Normal']))
-    
-    sample_tax = data['preview']['settings'].get('tax_rates')
-    if sample_tax:
-        story.append(Spacer(1, 0.1*inch))
-        story.append(Paragraph(f"Sample: {sample_tax.get('Name', 'N/A')} - {sample_tax.get('DisplayTaxRate', 0)}%", styles['Normal']))
-    
-    story.append(Spacer(1, 0.3*inch))
-    tracking_total = data['preview']['settings'].get('tracking_categories_total', 0)
-    story.append(Paragraph(f"<b>Tracking Categories:</b> {tracking_total}", styles['Normal']))
-    
-    sample_tracking = data['preview']['settings'].get('tracking_categories')
-    if sample_tracking:
-        story.append(Spacer(1, 0.1*inch))
-        story.append(Paragraph(f"Sample: {sample_tracking.get('Name', 'N/A')}", styles['Normal']))
-        options = sample_tracking.get('Options', [])
-        if options:
-            story.append(Paragraph(f"Options: {', '.join([opt.get('Name', '') for opt in options])}", styles['Normal']))
-    
+
+    story.append(Paragraph("Dukbill – Chart of Accounts (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    accounts = _get(data, "preview/settings/accounts_list", [])
+    if not accounts:
+        accounts = _as_list(_get(data, "preview/settings/accounts"))
+
+    rows = []
+    for a in accounts:
+        if not a:
+            continue
+        rows.append([
+            a.get("Code","N/A"),
+            a.get("Name","N/A"),
+            a.get("Class","N/A"),     # keep
+            a.get("TaxType","N/A"),   # keep
+        ])
+    add_table(
+        story,
+        "Accounts",
+        rows,
+        ["Code","Name","Class","Tax Type"],
+        [70,260,80,120],
+        styles
+    )
+
+    # Tax Rates (unchanged)
+    tax_rates = _get(data, "preview/settings/tax_rates_list", [])
+    if not tax_rates:
+        tax_rates = _as_list(_get(data, "preview/settings/tax_rates"))
+    tr_rows = []
+    for t in tax_rates:
+        if not t:
+            continue
+        tr_rows.append([
+            t.get("Name","N/A"),
+            t.get("DisplayTaxRate", 0),
+            t.get("TaxType","N/A"),
+            str(t.get("ReportTaxType","") or ""),
+        ])
+    add_table(
+        story,
+        "Tax Rates",
+        tr_rows,
+        ["Name","Rate %","Tax Type","Report Type"],
+        [220,60,120,120],
+        styles
+    )
+
+    # Tracking Categories (unchanged)
+    trk = _get(data, "preview/settings/tracking_categories_list", [])
+    if not trk:
+        trk = _as_list(_get(data, "preview/settings/tracking_categories"))
+    tc_rows = []
+    for tc in trk:
+        if not tc:
+            continue
+        options = ", ".join([o.get("Name","") for o in (tc.get("Options") or [])])
+        tc_rows.append([tc.get("Name","N/A"), options])
+    add_table(
+        story,
+        "Tracking Categories",
+        tc_rows,
+        ["Category","Options"],
+        [180,350],
+        styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+
+
+# ---------- 2) TRANSACTIONS (Bank Transactions + other counts) ----------
 
 def generate_transactions_report(data, output_file, hashed_email):
-    """Generate Bank Transactions PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Bank Transactions Report", org_name))
-    
-    transactions_total = data['preview']['transactions'].get('bank_transactions_total', 0)
-    story.append(Paragraph(f"<b>Total Bank Transactions:</b> {transactions_total}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    sample_txn = data['preview']['transactions'].get('bank_transactions')
-    if sample_txn:
-        story.append(Paragraph("<b>Sample Transaction Details:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        txn_data = [
-            ['Field', 'Value'],
-            ['Transaction ID', sample_txn.get('BankTransactionID', 'N/A')[:20] + '...'],
-            ['Type', sample_txn.get('Type', 'N/A')],
-            ['Status', sample_txn.get('Status', 'N/A')],
-            ['Date', format_date(sample_txn.get('Date'))],
-            ['Reference', sample_txn.get('Reference', 'N/A')],
-            ['Contact', sample_txn.get('Contact', {}).get('Name', 'N/A')],
-            ['Subtotal', format_currency(sample_txn.get('SubTotal'))],
-            ['Total Tax', format_currency(sample_txn.get('TotalTax'))],
-            ['Total', format_currency(sample_txn.get('Total'))],
-            ['Currency', sample_txn.get('CurrencyCode', 'N/A')],
-            ['Reconciled', str(sample_txn.get('IsReconciled', False))],
-            ['Has Attachments', str(sample_txn.get('HasAttachments', False))],
-        ]
-        
-        table = Table(txn_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-        
-        line_items = sample_txn.get('LineItems', [])
-        if line_items:
-            story.append(Spacer(1, 0.2*inch))
-            story.append(Paragraph("<b>Line Items:</b>", styles['Heading3']))
-            story.append(Spacer(1, 0.1*inch))
-            
-            for idx, item in enumerate(line_items, 1):
-                story.append(Paragraph(f"<b>Item {idx}:</b>", styles['Normal']))
-                story.append(Paragraph(f"Description: {item.get('Description', 'N/A')}", styles['Normal']))
-                story.append(Paragraph(f"Amount: {format_currency(item.get('LineAmount'))}", styles['Normal']))
-                story.append(Paragraph(f"Account Code: {item.get('AccountCode', 'N/A')}", styles['Normal']))
-                story.append(Spacer(1, 0.1*inch))
-    
-    story.append(Spacer(1, 0.3*inch))
-    story.append(Paragraph("<b>Other Transaction Types:</b>", styles['Heading2']))
-    story.append(Spacer(1, 0.1*inch))
-    
-    other_txns = [
-        ('Manual Journals', data['preview']['transactions'].get('manual_journals_total', 0)),
-        ('Overpayments', data['preview']['transactions'].get('overpayments_total', 0)),
-        ('Prepayments', data['preview']['transactions'].get('prepayments_total', 0)),
+
+    story.append(Paragraph("Dukbill – Bank Transactions (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    txns = _get(data, "preview/transactions/bank_transactions_list", [])
+    if not txns:
+        txns = _as_list(_get(data, "preview/transactions/bank_transactions"))
+
+    rows = []
+    for t in txns:
+        if not t:
+            continue
+        desc = t.get("Reference") or _get(t, "Contact/Name", "N/A")  # no truncation; allow wrap
+        rows.append([
+            safe_date(t.get("Date")),
+            desc,
+            money(t.get("Total")),
+            t.get("Status","") or "",
+            t.get("CurrencyCode","") or "",
+            str(t.get("IsReconciled", False)),
+        ])
+    add_table(
+        story,
+        "Bank Transactions – All",
+        rows,
+        ["Date","Description","Total","Status","CCY","Reconciled"],
+        [70,150,70,70,45,65],   # Description ~150
+        styles
+    )
+
+    other = [
+        ("Manual Journals", _get(data, "preview/transactions/manual_journals_total", 0)),
+        ("Overpayments",   _get(data, "preview/transactions/overpayments_total", 0)),
+        ("Prepayments",    _get(data, "preview/transactions/prepayments_total", 0)),
     ]
-    
-    for txn_type, count in other_txns:
-        story.append(Paragraph(f"{txn_type}: {count}", styles['Normal']))
-    
+    add_table(
+        story, "Other Transaction Types (Counts)",
+        [[k, v] for k, v in other],
+        ["Type", "Count"], [250, 260], styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+
+
+# ---------- 3) PAYMENTS ----------
 
 def generate_payments_report(data, output_file, hashed_email):
-    """Generate Payments PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Payments Report", org_name))
-    
-    payments_total = data['preview']['transactions'].get('payments_total', 0)
-    story.append(Paragraph(f"<b>Total Payments:</b> {payments_total}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    sample_payment = data['preview']['transactions'].get('payments')
-    if sample_payment:
-        story.append(Paragraph("<b>Sample Payment Details:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        payment_data = [
-            ['Field', 'Value'],
-            ['Payment ID', sample_payment.get('PaymentID', 'N/A')[:20] + '...'],
-            ['Date', format_date(sample_payment.get('Date'))],
-            ['Amount', format_currency(sample_payment.get('Amount'))],
-            ['Bank Amount', format_currency(sample_payment.get('BankAmount'))],
-            ['Reference', sample_payment.get('Reference', 'N/A')],
-            ['Payment Type', sample_payment.get('PaymentType', 'N/A')],
-            ['Status', sample_payment.get('Status', 'N/A')],
-            ['Reconciled', str(sample_payment.get('IsReconciled', False))],
-        ]
-        
-        invoice = sample_payment.get('Invoice', {})
-        if invoice:
-            contact = invoice.get('Contact', {})
-            payment_data.extend([
-                ['Invoice Contact', contact.get('Name', 'N/A')],
-                ['Invoice Type', invoice.get('Type', 'N/A')],
-            ])
-        
-        table = Table(payment_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-    
+
+    story.append(Paragraph("Dukbill – Payments (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    payments = _get(data, "preview/transactions/payments_list", [])
+    if not payments:
+        payments = _as_list(_get(data, "preview/transactions/payments"))
+
+    rows = []
+    for p in payments:
+        if not p:
+            continue
+        rows.append([
+            safe_date(p.get("Date")),
+            short(_get(p, "Invoice/Contact/Name", "N/A"), 35),
+            money(p.get("Amount")),
+            p.get("Status","") or "",
+            str(p.get("IsReconciled", False))
+        ])
+    add_table(
+        story, "Payments – All",
+        rows,
+        ["Date","Contact","Amount","Status","Reconciled"],
+        [70,160,80,70,70],
+        styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+
+# ---------- 4) CREDIT NOTES ----------
 
 def generate_credit_notes_report(data, output_file, hashed_email):
-    """Generate Credit Notes PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Credit Notes Report", org_name))
-    
-    credit_notes_total = data['preview']['transactions'].get('credit_notes_total', 0)
-    story.append(Paragraph(f"<b>Total Credit Notes:</b> {credit_notes_total}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    sample_cn = data['preview']['transactions'].get('credit_notes')
-    if sample_cn:
-        story.append(Paragraph("<b>Sample Credit Note Details:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        cn_data = [
-            ['Field', 'Value'],
-            ['Credit Note ID', sample_cn.get('CreditNoteID', 'N/A')[:20] + '...'],
-            ['Credit Note Number', sample_cn.get('CreditNoteNumber', 'N/A')],
-            ['Type', sample_cn.get('Type', 'N/A')],
-            ['Status', sample_cn.get('Status', 'N/A')],
-            ['Date', format_date(sample_cn.get('Date'))],
-            ['Due Date', format_date(sample_cn.get('DueDate'))],
-            ['Contact', sample_cn.get('Contact', {}).get('Name', 'N/A')],
-            ['Reference', sample_cn.get('Reference', 'N/A') or 'None'],
-            ['Subtotal', format_currency(sample_cn.get('SubTotal'))],
-            ['Total Tax', format_currency(sample_cn.get('TotalTax'))],
-            ['Total', format_currency(sample_cn.get('Total'))],
-            ['Remaining Credit', format_currency(sample_cn.get('RemainingCredit'))],
-            ['Currency', sample_cn.get('CurrencyCode', 'N/A')],
-            ['Has Attachments', str(sample_cn.get('HasAttachments', False))],
-        ]
-        
-        table = Table(cn_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-        
-        line_items = sample_cn.get('LineItems', [])
-        if line_items:
-            story.append(Spacer(1, 0.2*inch))
-            story.append(Paragraph("<b>Line Items:</b>", styles['Heading3']))
-            story.append(Spacer(1, 0.1*inch))
-            
-            for idx, item in enumerate(line_items, 1):
-                story.append(Paragraph(f"<b>Item {idx}:</b>", styles['Normal']))
-                story.append(Paragraph(f"Description: {item.get('Description', 'N/A')}", styles['Normal']))
-                story.append(Paragraph(f"Amount: {format_currency(item.get('LineAmount'))}", styles['Normal']))
-                story.append(Paragraph(f"Account Code: {item.get('AccountCode', 'N/A')}", styles['Normal']))
-                story.append(Spacer(1, 0.1*inch))
-        
-        allocations = sample_cn.get('Allocations', [])
-        if allocations:
-            story.append(Spacer(1, 0.2*inch))
-            story.append(Paragraph("<b>Allocations:</b>", styles['Heading3']))
-            story.append(Spacer(1, 0.1*inch))
-            
-            for idx, alloc in enumerate(allocations, 1):
-                story.append(Paragraph(f"Allocation {idx}: {format_currency(alloc.get('Amount'))} on {format_date(alloc.get('Date'))}", styles['Normal']))
-    
+
+    story.append(Paragraph("Dukbill – Credit Notes (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    credit_notes = _get(data, "preview/transactions/credit_notes_list", [])
+    if not credit_notes:
+        credit_notes = _as_list(_get(data, "preview/transactions/credit_notes"))
+
+    rows = []
+    for cn in credit_notes:
+        if not cn:
+            continue
+        rows.append([
+            safe_date(cn.get("Date")),
+            short(_get(cn, "Contact/Name", "Unknown"), 35),
+            cn.get("Status","Unknown"),
+            money(cn.get("Total")),
+            money(cn.get("RemainingCredit")),
+            cn.get("CurrencyCode","") or "",
+        ])
+    add_table(
+        story, "Credit Notes – All",
+        rows,
+        ["Date","Customer","Status","Total","Remaining","CCY"],
+        [70,160,70,70,75,40],
+        styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+# ---------- 5) PAYROLL (Employees, Pay Runs, Payslips) ----------
 
 def generate_payroll_report(data, output_file, hashed_email):
-    """Generate combined Payroll PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Payroll Report", org_name))
-    
-    # EMPLOYEES
-    story.append(Paragraph("<b>EMPLOYEES</b>", styles['Heading1']))
-    story.append(Spacer(1, 0.1*inch))
-    
-    employees_total = data['preview']['payroll'].get('employees_total', 0)
-    story.append(Paragraph(f"<b>Total Employees:</b> {employees_total}", styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    sample_employee = data['preview']['payroll'].get('employees')
-    if sample_employee:
-        story.append(Paragraph("<b>Sample Employee:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        emp_data = [
-            ['Field', 'Value'],
-            ['Employee ID', sample_employee.get('EmployeeID', 'N/A')[:20] + '...'],
-            ['Name', f"{sample_employee.get('FirstName', '')} {sample_employee.get('LastName', '')}"],
-            ['Email', sample_employee.get('Email', 'N/A')],
-            ['Status', sample_employee.get('Status', 'N/A')],
-            ['Date of Birth', format_date(sample_employee.get('DateOfBirth'))],
-            ['Gender', sample_employee.get('Gender', 'N/A')],
-            ['Phone', sample_employee.get('Phone', 'N/A')],
-            ['Mobile', sample_employee.get('Mobile', 'N/A')],
-            ['Start Date', format_date(sample_employee.get('StartDate'))],
-        ]
-        
-        table = Table(emp_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-    
-    # PAY RUNS
-    story.append(Spacer(1, 0.4*inch))
-    story.append(Paragraph("<b>PAY RUNS</b>", styles['Heading1']))
-    story.append(Spacer(1, 0.1*inch))
-    
-    payruns_total = data['preview']['payroll'].get('payruns_total', 0)
-    story.append(Paragraph(f"<b>Total Pay Runs:</b> {payruns_total}", styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    sample_payrun = data['preview']['payroll'].get('payruns')
-    if sample_payrun:
-        story.append(Paragraph("<b>Sample Pay Run:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        payrun_data = [
-            ['Field', 'Value'],
-            ['Pay Run ID', sample_payrun.get('PayRunID', 'N/A')[:20] + '...'],
-            ['Status', sample_payrun.get('PayRunStatus', 'N/A')],
-            ['Period Start', format_date(sample_payrun.get('PayRunPeriodStartDate'))],
-            ['Period End', format_date(sample_payrun.get('PayRunPeriodEndDate'))],
-            ['Payment Date', format_date(sample_payrun.get('PaymentDate'))],
-            ['Wages', format_currency(sample_payrun.get('Wages'))],
-            ['Deductions', format_currency(sample_payrun.get('Deductions'))],
-            ['Tax', format_currency(sample_payrun.get('Tax'))],
-            ['Super', format_currency(sample_payrun.get('Super'))],
-            ['Net Pay', format_currency(sample_payrun.get('NetPay'))],
-        ]
-        
-        table = Table(payrun_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-    
-    # PAYSLIPS
-    story.append(Spacer(1, 0.4*inch))
-    story.append(Paragraph("<b>PAYSLIPS</b>", styles['Heading1']))
-    story.append(Spacer(1, 0.1*inch))
-    
-    payslips_total = data['preview']['payroll'].get('payslips_total', 0)
-    story.append(Paragraph(f"<b>Total Payslips:</b> {payslips_total}", styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    sample_payslip = data['preview']['payroll'].get('payslips')
-    if sample_payslip:
-        story.append(Paragraph("<b>Sample Payslip:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        payslip_data = [
-            ['Field', 'Value'],
-            ['Payslip ID', sample_payslip.get('PayslipID', 'N/A')[:20] + '...'],
-            ['Employee', f"{sample_payslip.get('FirstName', '')} {sample_payslip.get('LastName', '')}"],
-            ['Employee ID', sample_payslip.get('EmployeeID', 'N/A')[:20] + '...'],
-            ['Wages', format_currency(sample_payslip.get('Wages'))],
-            ['Deductions', format_currency(sample_payslip.get('Deductions'))],
-            ['Tax', format_currency(sample_payslip.get('Tax'))],
-            ['Super', format_currency(sample_payslip.get('Super'))],
-            ['Reimbursements', format_currency(sample_payslip.get('Reimbursements'))],
-            ['Net Pay', format_currency(sample_payslip.get('NetPay'))],
-        ]
-        
-        table = Table(payslip_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-    
+
+    story.append(Paragraph("Dukbill – Payroll (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    # Employees
+    story.append(Paragraph("EMPLOYEES", styles["Heading2"]))
+    employees = _get(data, "preview/payroll/employees_list", [])
+    if not employees:
+        employees = _as_list(_get(data, "preview/payroll/employees"))
+    emp_rows = []
+    for e in employees:
+        if not e: 
+            continue
+        emp_rows.append([
+            f"{e.get('FirstName','')} {e.get('LastName','')}".strip(),
+            e.get("Email","") or "-",
+            safe_date(e.get("StartDate")),
+            e.get("Status","Unknown"),
+            e.get("Gender","") or "",
+            safe_date(e.get("DateOfBirth")),
+        ])
+    add_table(
+        story, "Employees – All",
+        emp_rows,
+        ["Name","Email","Start","Status","Gender","DOB"],
+        [150,160,55,55,55,55], styles
+    )
+
+    # Pay Runs
+    story.append(Paragraph("PAY RUNS", styles["Heading2"]))
+    payruns = _get(data, "preview/payroll/payruns_list", [])
+    if not payruns:
+        payruns = _as_list(_get(data, "preview/payroll/payruns"))
+    pr_rows = []
+    for pr in payruns:
+        if not pr:
+            continue
+        pr_rows.append([
+            safe_date(pr.get("PayRunPeriodStartDate")),
+            safe_date(pr.get("PayRunPeriodEndDate")),
+            safe_date(pr.get("PaymentDate")),
+            money(pr.get("Wages")),
+            money(pr.get("Tax")),
+            money(pr.get("Super")),
+            money(pr.get("NetPay")),
+            pr.get("PayRunStatus","Unknown"),
+        ])
+    add_table(
+        story, "Pay Runs – All",
+        pr_rows,
+        ["Start","End","Paid","Wages","Tax","Super","Net","Status"],
+        [55,55,55,60,55,55,60,65], styles
+    )
+
+    # Payslips
+    story.append(Paragraph("PAYSLIPS", styles["Heading2"]))
+    payslips = _get(data, "preview/payroll/payslips_list", [])
+    if not payslips:
+        payslips = _as_list(_get(data, "preview/payroll/payslips"))
+    ps_rows = []
+    for ps in payslips:
+        if not ps:
+            continue
+        ps_rows.append([
+            f"{ps.get('FirstName','')} {ps.get('LastName','')}".strip(),
+            money(ps.get("Wages")),
+            money(ps.get("Deductions")),
+            money(ps.get("Tax")),
+            money(ps.get("Super")),
+            money(ps.get("Reimbursements")),
+            money(ps.get("NetPay")),
+        ])
+    add_table(
+        story, "Payslips – All",
+        ps_rows,
+        ["Employee","Wages","Deductions","Tax","Super","Reimb.","Net"],
+        [140,60,70,55,55,60,60], styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+# ---------- 6) INVOICES ----------
 
 def generate_invoices_report(data, output_file, hashed_email):
-    """Generate Invoices PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Invoices Report", org_name))
-    
-    invoices_total = data['preview']['transactions'].get('invoices_total', 0)
-    story.append(Paragraph(f"<b>Total Invoices:</b> {invoices_total}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    sample_invoice = data['preview']['transactions'].get('invoices')
-    if sample_invoice:
-        story.append(Paragraph("<b>Sample Invoice Details:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        invoice_data = [
-            ['Field', 'Value'],
-            ['Invoice ID', sample_invoice.get('InvoiceID', 'N/A')[:20] + '...'],
-            ['Invoice Number', sample_invoice.get('InvoiceNumber', 'N/A')],
-            ['Type', sample_invoice.get('Type', 'N/A')],
-            ['Status', sample_invoice.get('Status', 'N/A')],
-            ['Date', format_date(sample_invoice.get('Date'))],
-            ['Due Date', format_date(sample_invoice.get('DueDate'))],
-            ['Contact', sample_invoice.get('Contact', {}).get('Name', 'N/A')],
-            ['Reference', sample_invoice.get('Reference', 'N/A') or 'None'],
-            ['Subtotal', format_currency(sample_invoice.get('SubTotal'))],
-            ['Total Tax', format_currency(sample_invoice.get('TotalTax'))],
-            ['Total', format_currency(sample_invoice.get('Total'))],
-            ['Amount Due', format_currency(sample_invoice.get('AmountDue'))],
-            ['Amount Paid', format_currency(sample_invoice.get('AmountPaid'))],
-            ['Currency', sample_invoice.get('CurrencyCode', 'N/A')],
-        ]
-        
-        table = Table(invoice_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-        
-        line_items = sample_invoice.get('LineItems', [])
-        if line_items:
-            story.append(Spacer(1, 0.2*inch))
-            story.append(Paragraph("<b>Line Items:</b>", styles['Heading3']))
-            story.append(Spacer(1, 0.1*inch))
-            
-            for idx, item in enumerate(line_items, 1):
-                story.append(Paragraph(f"<b>Item {idx}:</b>", styles['Normal']))
-                story.append(Paragraph(f"Description: {item.get('Description', 'N/A')}", styles['Normal']))
-                story.append(Paragraph(f"Quantity: {item.get('Quantity', 'N/A')}", styles['Normal']))
-                story.append(Paragraph(f"Unit Amount: {format_currency(item.get('UnitAmount'))}", styles['Normal']))
-                story.append(Paragraph(f"Line Amount: {format_currency(item.get('LineAmount'))}", styles['Normal']))
-                story.append(Spacer(1, 0.1*inch))
-    
+
+    story.append(Paragraph("Dukbill – Invoices (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    invoices = _get(data, "preview/transactions/invoices_list", [])
+    if not invoices:
+        invoices = _as_list(_get(data, "preview/transactions/invoices"))
+
+    inv_rows = []
+    for inv in invoices:
+        if not inv:
+            continue
+        inv_rows.append([
+            safe_date(inv.get("Date")),
+            _get(inv, "Contact/Name", "Unknown"),  # let the cell wrap
+            inv.get("Status","Unknown"),
+            money(inv.get("Total")),
+            money(inv.get("AmountPaid")),
+            money(inv.get("AmountDue")),
+            safe_date(inv.get("DueDate")) or "-",
+        ])
+    add_table(
+        story, "Invoices – All",
+        inv_rows,
+        ["Date","Customer","Status","Total","Paid","Balance","Due"],
+        [65,140,75,70,60,70,70],
+        styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+
+
+# ---------- 7) FINANCIAL REPORTS SUMMARY (shows all top-level rows) ----------
 
 def generate_reports_summary(data, output_file, hashed_email):
-    """Generate Financial Reports Summary PDF and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Financial Reports Summary", org_name))
-    
-    # P&L Summary
-    pl_data = data['preview'].get('reports', {}).get('profit_loss')
-    if pl_data:
-        story.append(Paragraph("<b>PROFIT & LOSS</b>", styles['Heading1']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        reports = pl_data.get('Reports', [])
-        if reports:
-            report = reports[0]
-            story.append(Paragraph(f"Report Title: {report.get('ReportTitles', ['N/A'])[0]}", styles['Normal']))
-            story.append(Paragraph(f"Report Date: {report.get('ReportDate', 'N/A')}", styles['Normal']))
-            story.append(Spacer(1, 0.2*inch))
-            
-            rows = report.get('Rows', [])
-            for row in rows[:5]:
-                if row.get('RowType') == 'Header':
-                    story.append(Paragraph(f"<b>{row.get('Title', '')}</b>", styles['Heading3']))
-                elif row.get('RowType') == 'Section':
-                    story.append(Paragraph(row.get('Title', ''), styles['Normal']))
-                    cells = row.get('Cells', [])
-                    if cells:
-                        value = cells[0].get('Value', 'N/A')
-                        story.append(Paragraph(f"Amount: {format_currency(value)}", styles['Normal']))
-                story.append(Spacer(1, 0.1*inch))
+
+    story.append(Paragraph("Dukbill – Financial Reports Summary", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    # P&L
+    pl = _get(data, "preview/reports/profit_loss", {})
+    story.append(Paragraph("PROFIT & LOSS", styles["Heading2"]))
+    if pl and isinstance(pl.get("Reports"), list) and pl["Reports"]:
+        rp = pl["Reports"][0]
+        story.append(Paragraph(f"Title: {(rp.get('ReportTitles') or [''])[0]}", styles["BodyText"]))
+        story.append(Paragraph(f"Report Date: {rp.get('ReportDate','')}", styles["BodyText"]))
+        story.append(Spacer(1, 6))
+        # Flatten one level of sections into a table if possible
+        rows = []
+        for row in (rp.get("Rows") or []):
+            if row.get("RowType") == "Section":
+                title = row.get("Title","")
+                cells = row.get("Cells") or []
+                val = cells[0].get("Value") if cells else None
+                rows.append([short(title, 60), money(val)])
+        add_table(story, "P&L – Sections", rows, ["Section", "Amount"], [350,160], styles)
     else:
-        story.append(Paragraph("<b>PROFIT & LOSS</b>", styles['Heading1']))
-        story.append(Paragraph("No P&L data available", styles['Normal']))
-    
-    story.append(Spacer(1, 0.3*inch))
-    
-    # Balance Sheet Summary
-    bs_data = data['preview'].get('reports', {}).get('balance_sheet')
-    if bs_data:
-        story.append(Paragraph("<b>BALANCE SHEET</b>", styles['Heading1']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        reports = bs_data.get('Reports', [])
-        if reports:
-            report = reports[0]
-            story.append(Paragraph(f"Report Title: {report.get('ReportTitles', ['N/A'])[0]}", styles['Normal']))
-            story.append(Paragraph(f"Report Date: {report.get('ReportDate', 'N/A')}", styles['Normal']))
-            story.append(Spacer(1, 0.2*inch))
-            
-            rows = report.get('Rows', [])
-            for row in rows[:5]:
-                if row.get('RowType') == 'Header':
-                    story.append(Paragraph(f"<b>{row.get('Title', '')}</b>", styles['Heading3']))
-                elif row.get('RowType') == 'Section':
-                    story.append(Paragraph(row.get('Title', ''), styles['Normal']))
-                    cells = row.get('Cells', [])
-                    if cells:
-                        value = cells[0].get('Value', 'N/A')
-                        story.append(Paragraph(f"Amount: {format_currency(value)}", styles['Normal']))
-                story.append(Spacer(1, 0.1*inch))
+        story.append(Paragraph("No P&L data available.", styles["BodyText"]))
+
+    story.append(Spacer(1, 12))
+
+    # Balance Sheet
+    bs = _get(data, "preview/reports/balance_sheet", {})
+    story.append(Paragraph("BALANCE SHEET", styles["Heading2"]))
+    if bs and isinstance(bs.get("Reports"), list) and bs["Reports"]:
+        rp = bs["Reports"][0]
+        story.append(Paragraph(f"Title: {(rp.get('ReportTitles') or [''])[0]}", styles["BodyText"]))
+        story.append(Paragraph(f"Report Date: {rp.get('ReportDate','')}", styles["BodyText"]))
+        story.append(Spacer(1, 6))
+        rows = []
+        for row in (rp.get("Rows") or []):
+            if row.get("RowType") == "Section":
+                title = row.get("Title","")
+                cells = row.get("Cells") or []
+                val = cells[0].get("Value") if cells else None
+                rows.append([short(title, 60), money(val)])
+        add_table(story, "Balance Sheet – Sections", rows, ["Section", "Amount"], [350,160], styles)
     else:
-        story.append(Paragraph("<b>BALANCE SHEET</b>", styles['Heading1']))
-        story.append(Paragraph("No Balance Sheet data available", styles['Normal']))
-    
+        story.append(Paragraph("No Balance Sheet data available.", styles["BodyText"]))
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
+# ---------- 8) BANK TRANSFERS ----------
 
 def generate_bank_transfers_report(data, output_file, hashed_email):
-    """Generate Bank Transfers PDF report and save to S3"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    buffer = BytesIO()
+    doc = _new_doc(buffer)
+    styles = setup_styles()
     story = []
-    styles = getSampleStyleSheet()
-    
     org_name = data.get('organization', 'Unknown Organization')
-    story.extend(create_header("Bank Transfers Report", org_name))
-    
-    transfers_total = data['preview']['transactions'].get('bank_transfers_total', 0)
-    story.append(Paragraph(f"<b>Total Bank Transfers:</b> {transfers_total}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    sample_transfer = data['preview']['transactions'].get('bank_transfers')
-    if sample_transfer:
-        story.append(Paragraph("<b>Sample Bank Transfer Details:</b>", styles['Heading2']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        transfer_data = [
-            ['Field', 'Value'],
-            ['Transfer ID', sample_transfer.get('BankTransferID', 'N/A')[:20] + '...'],
-            ['Date', format_date(sample_transfer.get('Date'))],
-            ['Amount', format_currency(sample_transfer.get('Amount'))],
-            ['From Account', sample_transfer.get('FromBankAccount', {}).get('Name', 'N/A')],
-            ['To Account', sample_transfer.get('ToBankAccount', {}).get('Name', 'N/A')],
-            ['Reference', sample_transfer.get('Reference', 'N/A') or 'None'],
-            ['Currency', sample_transfer.get('CurrencyRate', 'N/A')],
-        ]
-        
-        table = Table(transfer_data, colWidths=[2.5*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a5490')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(table)
-    
+
+    story.append(Paragraph("Dukbill – Bank Transfers (Broker Essentials)", styles["Heading1"]))
+    story.append(Paragraph(f"Organization: {org_name}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    transfers = _get(data, "preview/transactions/bank_transfers_list", [])
+    if not transfers:
+        transfers = _as_list(_get(data, "preview/transactions/bank_transfers"))
+
+    rows = []
+    for bt in transfers:
+        if not bt:
+            continue
+        rows.append([
+            safe_date(bt.get("Date")),
+            short(_get(bt, "FromBankAccount/Name","Unknown"), 30),
+            short(_get(bt, "ToBankAccount/Name","Unknown"), 30),
+            money(bt.get("Amount")),
+            short(bt.get("Reference") or "None", 40),
+        ])
+    add_table(
+        story, "Bank Transfers – All",
+        rows,
+        ["Date","From","To","Amount","Reference"],
+        [65,150,150,70,90], styles
+    )
+
     doc.build(story)
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
