@@ -1,9 +1,9 @@
 import os
 
 # Load .env only if running locally (i.e., not in ECS)
-if not os.environ.get("ECS_ENVIRONMENT"):  # You can set this variable in ECS task definition
+if not os.environ.get("ECS_ENVIRONMENT"):
     from dotenv import load_dotenv
-    load_dotenv()  # Reads from .env file in the project root
+    load_dotenv()
 
 # --- Database Configuration ---
 DB_CONFIG = {
@@ -46,8 +46,6 @@ SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "has:attachment newer_than:2y")
 
 # --- Gmail API Configuration ---
 XERO_SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
-
-
 
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = {

@@ -10,7 +10,7 @@ DB_NAME = os.environ.get('DB_NAME', 'dukbill')
 engine = create_engine(
     f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
     echo=False,
-    pool_pre_ping=True  # Verify connections before using them
+    pool_pre_ping=True
 )
 
 from sqlalchemy.orm import DeclarativeBase

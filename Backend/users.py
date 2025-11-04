@@ -1,6 +1,9 @@
 from Database.db_utils import *
 from fastapi import HTTPException
 
+# ------------------------
+# Retrieval User/Client/Broker
+# ------------------------
 def handle_registration(auth0_id: str, profile: dict):
     user_obj = find_user(auth0_id)
     missing_fields = []
