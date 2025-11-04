@@ -44,6 +44,11 @@ REDIRECT_URI = os.environ.get("REDIRECT_URI")
 SCOPES = os.environ.get("SCOPES")
 SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "has:attachment newer_than:2y")
 
+# --- Gmail API Configuration ---
+XERO_SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
+
+
+
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
