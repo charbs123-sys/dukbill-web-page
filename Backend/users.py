@@ -74,6 +74,7 @@ def toggle_broker_access(client_id):
 def get_client_emails(client_id):
     if verify_client(client_id):
         return get_client_emails_db(client_id)
+
 # ------------------------
 #  Broker
 # ------------------------
@@ -102,6 +103,7 @@ def client_add_email(client_id, domain, email):
     except Exception as e:
         print(f"Failed to add email {email}: {e}")
         return False
+
 # ------------------------
 #  Basiq
 # ------------------------

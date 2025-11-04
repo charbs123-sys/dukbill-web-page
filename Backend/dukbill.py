@@ -18,7 +18,7 @@ from Backend.External_APIs.basiq_api import BasiqAPI
 # ------------------------
 from config import AUTH0_DOMAIN, XERO_SCOPES
 from auth import *
-from Backend.Users.users import *
+from Backend.users import *
 from Backend.Documents.documents import *
 from Backend.Database.db_init import initialize_database
 from Backend.Database.S3_utils import *

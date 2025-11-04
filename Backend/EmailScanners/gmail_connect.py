@@ -12,7 +12,7 @@ import urllib.request
 import urllib.error
 
 from Backend.helpers.helper import get_email_domain
-from Backend.Users.users import client_add_email
+from Backend.users import client_add_email
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
