@@ -9,7 +9,7 @@ def handle_registration(auth0_id: str, profile: dict):
     missing_fields = []
 
     if not user_obj:
-        # New user — register and mark missing fields
+
         user_id = register_user(
             auth0_id,
             profile["email"],

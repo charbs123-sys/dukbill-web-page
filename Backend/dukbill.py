@@ -168,7 +168,7 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         profile = find_client(user_obj["user_id"])
         profile_id = profile["client_id"]
         user_type = "client"
-    # Need to remove email_scan from frontend
+
     return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_verified": jwt_info["email_verified"]}
 
 @app.patch("/users/onboarding")

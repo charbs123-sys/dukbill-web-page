@@ -1,5 +1,4 @@
 # xero_pdf_generators_aesthetic.py
-
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
