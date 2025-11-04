@@ -1,5 +1,5 @@
 import hashlib
-from dukbill import verification_states
+from dukbill import verification_states_shufti
 from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
 from helper import jpg_to_pdf_simple, hash_email
 from documents import *
@@ -22,7 +22,7 @@ def log_callback_event(event: str, reference: str):
 
 def get_verification_state(reference: str) -> dict:
     """Retrieve verification state for a reference."""
-    verification_state = verification_states.get(reference)
+    verification_state = verification_states_shufti.get(reference)
     
     if not verification_state:
         print(f"⚠️ No user found for reference: {reference}")

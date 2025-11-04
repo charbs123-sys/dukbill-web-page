@@ -110,9 +110,134 @@ async def startup_event():
     print("✓ Application started with Redis expiry listener")
 
 # ------------------------
+# MYOB
+# ------------------------
+
+from myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
+verification_states_myob = {}
+@app.post("/myob/user_redirect")
+async def myob_redirect(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    
+    # Generate a secure random state parameter
+    state = secrets.token_urlsafe(32)
+    
+    # Build auth URL with the state parameter
+    url_to_redirect = build_auth_url(state=state)
+    
+    # Store the mapping of state to user
+    verification_states_myob[state] = {
+        "user_id": user_obj["user_id"],
+        "auth0_id": auth0_id,
+        "email": user_obj["email"],
+        "created_at": time.time(),
+        "emails": emails,
+        "client_id": client["client_id"]
+    }
+    
+    return {
+        "verification_url": url_to_redirect,
+        "state": state  # Return state instead of reference
+    }
+
+import urllib
+
+from fastapi import BackgroundTasks
+from myob_pdf_generation import (
+    generate_payroll_pdf,
+    generate_sales_pdf,
+    generate_banking_pdf,
+    generate_purchases_pdf
+)
+@app.get("/myob/callback")
+async def myob_callback_compilation(request: Request, background_tasks: BackgroundTasks):
+    # Get query parameters from the callback URL
+    print("entered callback")
+    query_params = request.query_params
+    code = query_params.get("code")
+    code = urllib.parse.unquote(code)
+    business_id = query_params.get("businessId")
+    state = query_params.get("state")  # Important for security!
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="No authorization code received")
+    
+    # Verify state parameter matches what you stored
+    if state not in verification_states_myob:
+        raise HTTPException(status_code=400, detail="Invalid state parameter")
+    
+    # Get the stored user data
+    user_data = verification_states_myob[state]
+    user_email = user_data.get("emails")
+
+    # Get the first email from the list
+    if isinstance(user_email, list) and user_email:
+        user_email = user_email[0]
+    elif not user_email:
+        raise HTTPException(status_code=400, detail="No email found for user")
+    
+    hashed_user_email = hash_email(user_email['email_address'])
+    
+    # Add the background processing task
+    background_tasks.add_task(
+        process_myob_data,
+        code,
+        business_id,
+        state,
+        hashed_user_email
+    )
+    
+    # Immediately redirect user to frontend success page
+    return RedirectResponse(url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard")  # Change to your frontend URL
+
+def process_myob_data(code: str, business_id: str, state: str, hashed_user_email: str):
+    """Background task to process MYOB data and generate PDFs"""
+    try:
+        # Exchange code for tokens
+        tokens = get_access_token_myob(code)
+        
+        if not tokens:
+            print("Failed to get access token")
+            return
+        
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        
+        # Retrieve MYOB data
+        myob_data = retrieve_endpoints_myob(access_token, business_id)
+
+        # Generate PDFs
+        payroll_pdf = generate_payroll_pdf(myob_data)
+        sales_pdf = generate_sales_pdf(myob_data)
+        banking_pdf = generate_banking_pdf(myob_data)
+        purchases_pdf = generate_purchases_pdf(myob_data)
+        
+        # Upload to S3
+        upload_myob_pdf_to_s3(payroll_pdf, hashed_user_email, "Broker_Payroll_Summary.pdf")
+        upload_myob_pdf_to_s3(sales_pdf, hashed_user_email, "Broker_Sales_Summary.pdf")
+        upload_myob_pdf_to_s3(banking_pdf, hashed_user_email, "Broker_Banking_Summary.pdf")
+        upload_myob_pdf_to_s3(purchases_pdf, hashed_user_email, "Broker_Purchases_Summary.pdf")
+        
+        print(f"✓ Successfully processed MYOB data for {hashed_user_email}")
+        
+    except Exception as e:
+        print(f"✗ Error processing MYOB data: {e}")
+    finally:
+        # Clean up the state
+        if state in verification_states_myob:
+            del verification_states_myob[state]
+
+# ------------------------
 # Shufti
 # ------------------------
-verification_states = {}
+verification_states_shufti = {}
 @app.post("/shufti/user_redirect")
 async def shufti_redirect(user=Depends(get_current_user)):
     claims, _ = user
@@ -133,7 +258,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
     reference = response.get("reference")
 
     # Store the mapping of reference to user
-    verification_states[reference] = {
+    verification_states_shufti[reference] = {
         "user_id": user_obj["user_id"],
         "auth0_id": auth0_id,
         "email": user_obj["email"],
@@ -175,11 +300,11 @@ async def notify_callback(request: Request):
         # Handle different event types
         if event == 'verification.accepted':
             await handle_verification_accepted(reference, verification_state)
-            del verification_states[reference]
+            del verification_states_shufti[reference]
         
         elif event == 'verification.declined':
             handle_verification_declined(verification_state["user_id"], response_data)
-            del verification_states[reference]
+            del verification_states_shufti[reference]
         
         return {"status": "success"}
         
@@ -576,10 +701,14 @@ async def get_client_documents(user=Depends(get_current_user)):
     headings = get_client_dashboard(client["client_id"], emails)
     verified_headings = get_client_verified_ids_dashboard(client["client_id"], emails)
     xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], emails)
+    myob_verified_documents = get_myob_verified_documents_dashboard(client["client_id"], emails)
+
     if verified_headings:
         headings.extend(verified_headings)
     if xero_verified_documents:
         headings.extend(xero_verified_documents)
+    if myob_verified_documents:
+        headings.extend(myob_verified_documents)
     return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
 
 @app.post("/clients/category/documents")
@@ -603,8 +732,16 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
                     "Payroll Report", "Transactions Report"]:
         xero_docs = get_client_xero_documents(client["client_id"], emails, category)
         documents.extend(xero_docs)
+    
+    # Check if category is a MYOB report type
+    if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
+        myob_docs = get_client_myob_documents(client["client_id"], emails, category)
+        documents.extend(myob_docs)
 
     return documents
+
+
+
 @app.post("/broker/access")
 async def toggle_broker_access_route(user=Depends(get_current_user)):
     claims, _ = user
@@ -765,12 +902,23 @@ async def delete_client_document_endpoint(
         "xero_transactions_report"
     ]
     
+    # Known MYOB report types
+    myob_report_types = [
+        "Broker_Payroll_Summary",
+        "Broker_Sales_Summary",
+        "Broker_Banking_Summary",
+        "Broker_Purchases_Summary"
+    ]
+    
     # Check if it's a verified identity document by checking the id
     if threadid in identity_doc_types:
         delete_client_document_identity(threadid, hashed_email)
     # Check if it's a Xero report
     elif threadid in xero_report_types:
         delete_client_xero_report(threadid, hashed_email)
+    # Check if it's a MYOB report
+    elif threadid in myob_report_types:
+        delete_client_myob_report(threadid, hashed_email)
     else:
         delete_client_document(hashed_email, threadid)
     

@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 from S3_init import s3, bucket_name
 from config import CLOUDFRONT_DOMAIN
 import logging
+from io import BytesIO
 
 def list_files(prefix: str = ""):
     response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
@@ -124,6 +125,24 @@ def upload_pdf_to_s3(buffer, hashed_email, filename):
     """Upload PDF buffer to S3"""
     buffer.seek(0)
     s3_key = f"{hashed_email}/xero_reports/{filename}"
+    
+    try:
+        s3.upload_fileobj(
+            buffer,
+            bucket_name,
+            s3_key,
+            ExtraArgs={'ContentType': 'application/pdf'}
+        )
+        print(f"✓ Uploaded to S3: s3://{bucket_name}/{s3_key}")
+        return s3_key
+    except ClientError as e:
+        print(f"✗ Failed to upload {filename}: {str(e)}")
+        raise
+
+def upload_myob_pdf_to_s3(pdf_bytes, hashed_email, filename):
+    """Upload PDF bytes to S3"""
+    buffer = BytesIO(pdf_bytes)  # Convert bytes to file-like object
+    s3_key = f"{hashed_email}/myob_reports/{filename}"
     
     try:
         s3.upload_fileobj(
