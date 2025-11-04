@@ -1,7 +1,7 @@
 import random
 import mysql.connector
-from Backend.helpers.helper import *
-from Backend.Database.db_init import *
+from helpers.helper import *
+from Database.db_init import *
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 

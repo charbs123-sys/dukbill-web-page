@@ -11,26 +11,26 @@ from fastapi import BackgroundTasks
 # Model Imports
 # ------------------------
 from pydantic import BaseModel
-from Backend.External_APIs.basiq_api import BasiqAPI
+from External_APIs.basiq_api import BasiqAPI
 
 # ------------------------
 # File Imports
 # ------------------------
 from config import AUTH0_DOMAIN, XERO_SCOPES
 from auth import *
-from Backend.users import *
-from Backend.Documents.documents import *
-from Backend.Database.db_init import initialize_database
-from Backend.Database.S3_utils import *
+from users import *
+from Documents.documents import *
+from Database.db_init import initialize_database
+from Database.S3_utils import *
 from EmailScanners.gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
-from Backend.Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
+from Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
 from shufti import shufti_url
-from Backend.helpers.id_helpers import *
-from Backend.helpers.xero_helpers import *
-from Backend.External_APIs.xero_pdf_generation import *
-from Backend.helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
-from Backend.External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
+from helpers.id_helpers import *
+from helpers.xero_helpers import *
+from External_APIs.xero_pdf_generation import *
+from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
+from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
 
 # ------------------------
 # Python Imports
@@ -133,43 +133,15 @@ async def google_signup(req: GoogleTokenRequest):
         raise HTTPException(status_code=401, detail="Invalid Google token")
     return {"success": "User registered successfully"}
 
-@app.post("/auth/client/register")
+@app.post("/auth/register")
 async def register(user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
-    user_obj = find_user(auth0_id)
-    missing_fields = []
 
-    if not user_obj:
-        # New user — register and mark missing fields
-        user_id = register_user(auth0_id, profile["email"], profile["picture"], profileComplete=False)
-        missing_fields = ["name", "company", "phone"]
-        return {
-            "user": user_id,
-            "isNewUser": True,
-            "missingFields": missing_fields,
-            "profileComplete": False,
-        }
-
-    if user_obj["profile_complete"]:
-        return {
-            "user": user_obj["user_id"],
-            "isNewUser": False,
-            "missingFields": [],
-            "profileComplete": True,
-        }
-
-    for field in ["name", "company", "phone"]:
-        if not user_obj.get(field):
-            missing_fields.append(field)
-
-    return {
-        "user": user_obj["user_id"],
-        "isNewUser": False,
-        "missingFields": missing_fields,
-        "profileComplete": False,
-    }
+    # Call the extracted core logic function
+    result = handle_registration(auth0_id, profile)
+    return result
 
 @app.post("/auth/check-verification")
 async def user_email_authentication(user=Depends(get_current_user)):
@@ -185,6 +157,9 @@ async def fetch_user_profile(user=Depends(get_current_user)):
     claims, access_token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+
+    jwt_info = get_user_info_from_auth0(access_token)
+    
     if user_obj["isBroker"]:
         profile = find_broker(user_obj["user_id"])
         profile_id = profile["broker_id"]
@@ -194,7 +169,7 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         profile_id = profile["client_id"]
         user_type = "client"
     # Need to remove email_scan from frontend
-    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_scan": False}
+    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_verified": jwt_info["email_verified"]}
 
 @app.patch("/users/onboarding")
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)):

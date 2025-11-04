@@ -1,6 +1,47 @@
-from Backend.Database.db_utils import *
+from Database.db_utils import *
 from fastapi import HTTPException
 
+def handle_registration(auth0_id: str, profile: dict):
+    user_obj = find_user(auth0_id)
+    missing_fields = []
+
+    if not user_obj:
+        # New user — register and mark missing fields
+        user_id = register_user(
+            auth0_id,
+            profile["email"],
+            profile["picture"],
+            profileComplete=False
+        )
+        missing_fields = ["name", "company", "phone"]
+        return {
+            "user": user_id,
+            "isNewUser": True,
+            "missingFields": missing_fields,
+            "profileComplete": False,
+        }
+
+    # Existing user: check if profile is complete
+    if user_obj.get("profile_complete"):
+        return {
+            "user": user_obj["user_id"],
+            "isNewUser": False,
+            "missingFields": [],
+            "profileComplete": True,
+        }
+
+    # Identify missing fields for incomplete profiles
+    for field in ["name", "company", "phone"]:
+        if not user_obj.get(field):
+            missing_fields.append(field)
+
+    return {
+        "user": user_obj["user_id"],
+        "isNewUser": False,
+        "missingFields": missing_fields,
+        "profileComplete": False,
+    }
+    
 # ------------------------
 # Retrieval User/Client/Broker
 # ------------------------

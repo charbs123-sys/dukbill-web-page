@@ -3,7 +3,7 @@ import base64
 from fastapi import FastAPI, HTTPException
 import time
 import requests
-from Backend.External_APIs.xero_pdf_generation import *
+from External_APIs.xero_pdf_generation import *
 
 tokens = {}
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")

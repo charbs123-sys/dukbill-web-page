@@ -11,8 +11,8 @@ from datetime import datetime
 from reportlab.lib.pagesizes import letter, A4
 import os
 
-from Backend.Database.S3_init import s3
-from Backend.Database.S3_utils import upload_pdf_to_s3
+from Database.S3_init import s3
+from Database.S3_utils import upload_pdf_to_s3
 
 s3_client = s3
 
