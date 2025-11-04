@@ -3,13 +3,9 @@ from jwt import PyJWKClient
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from fastapi import HTTPException
-from config import AUTH0_DOMAIN, AUTH0_AUDIENCE, GOOGLE_CLIENT_ID
+from config import AUTH0_DOMAIN, AUTH0_AUDIENCE, GOOGLE_CLIENT_ID, XERO_CLIENT_ID, XERO_CLIENT_SECRET, XERO_REDIRECT_URI
 import os
 import httpx
-XERO_CLIENT_ID = os.getenv("XERO_CLIENT_ID")
-XERO_CLIENT_SECRET = os.getenv("XERO_CLIENT_SECRET")
-XERO_REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
-
 
 # Xero OAuth endpoints
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
@@ -73,6 +69,9 @@ def verify_google_token(token: str):
         print(f"[AUTH] Google token verification failed: {e}")
         return None
 
+# ------------------------
+# Xero Verification
+# ------------------------
 async def verify_xero_auth(code: str):
     """
     Verify Xero authorization code and return user information.
