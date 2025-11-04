@@ -53,7 +53,6 @@ verification_states_myob = {}
 verification_states_shufti = {}
 session_state = {}
 
-
 # ------------------------
 # CORS Settings
 # ------------------------
@@ -585,8 +584,6 @@ async def notify_callback(request: Request):
         return {"status": "success"}
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # ------------------------
@@ -644,8 +641,6 @@ async def connect_xero(user=Depends(get_current_user)):
         "scope": XERO_SCOPES,
         "state": state,
     }
-    print("this is state before")
-    print(state)
     
     auth_url = f"{AUTH_URL}?{urlencode(params)}"
     return {"auth_url": auth_url}
@@ -706,10 +701,10 @@ async def callback_xero(code: str = "", state: str = ""):
     # Use first organization
     tenant_id = connections[0]["tenantId"]
     org_name = connections[0]["tenantName"]
-    print('before fetch')
+    
     # Fetch all data
     all_data = fetch_all_data(tenant_id)
-    print("after fetch")
+    
     # Transform to preview format for PDF generation
     preview = {
         "settings": {

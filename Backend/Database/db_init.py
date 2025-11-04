@@ -57,7 +57,5 @@ class Emails(Base):
 
 def initialize_database():
     """Create all tables if they don't exist"""
-    #Base.metadata.drop_all(engine)
-    #print("All tables dropped successfully")
     Base.metadata.create_all(engine)
     print("SQL Database initialized.")
