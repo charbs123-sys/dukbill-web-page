@@ -6,7 +6,7 @@ import base64
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from botocore.exceptions import ClientError
-from S3_init import s3, bucket_name
+from Backend.Database.S3_init import s3, bucket_name
 from config import CLOUDFRONT_DOMAIN
 import logging
 from io import BytesIO

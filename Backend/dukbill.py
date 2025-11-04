@@ -11,26 +11,26 @@ from fastapi import BackgroundTasks
 # Model Imports
 # ------------------------
 from pydantic import BaseModel
-from basiq_api import BasiqAPI
+from Backend.External_APIs.basiq_api import BasiqAPI
 
 # ------------------------
 # File Imports
 # ------------------------
 from config import AUTH0_DOMAIN, XERO_SCOPES
 from auth import *
-from users import *
-from documents import *
-from db_init import initialize_database
-from S3_utils import *
-from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
-from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
+from Backend.Users.users import *
+from Backend.Documents.documents import *
+from Backend.Database.db_init import initialize_database
+from Backend.Database.S3_utils import *
+from EmailScanners.gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
+from Backend.Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
 from shufti import shufti_url
-from id_helpers import *
-from xero_helpers import *
-from xero_pdf_generation import *
-from myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
-from myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
+from Backend.helpers.id_helpers import *
+from Backend.helpers.xero_helpers import *
+from Backend.External_APIs.xero_pdf_generation import *
+from Backend.helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
+from Backend.External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
 
 # ------------------------
 # Python Imports

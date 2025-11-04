@@ -1,6 +1,6 @@
-from db_utils import *
-from S3_utils import *
-from helper import *
+from Backend.Database.db_utils import *
+from Backend.Database.S3_utils import *
+from Backend.helpers.helper import *
 from config import DOCUMENT_CATEGORIES
 from fastapi import UploadFile
 import uuid
@@ -76,7 +76,7 @@ def get_client_verified_ids_dashboard(client_id: str, emails: list) -> list:
         hashed_email = hash_email(email)
 
         try:
-            from S3_utils import list_s3_files
+            from Backend.Database.S3_utils import list_s3_files
             verified_ids_path = "/verified_ids"
             files = list_s3_files(hashed_email, verified_ids_path)
             
@@ -171,7 +171,7 @@ def get_xero_verified_documents_dashboard(client_id: str, emails: list) -> list:
         hashed_email = hash_email(email)
         
         try:
-            from S3_utils import list_s3_files
+            from Backend.Database.S3_utils import list_s3_files
             xero_reports_path = "/xero_reports"
             files = list_s3_files(hashed_email, xero_reports_path)
             
@@ -263,7 +263,7 @@ def get_myob_verified_documents_dashboard(client_id: str, emails: list) -> list:
         hashed_email = hash_email(email)
         
         try:
-            from S3_utils import list_s3_files
+            from Backend.Database.S3_utils import list_s3_files
             myob_reports_path = "/myob_reports"
             files = list_s3_files(hashed_email, myob_reports_path)
             

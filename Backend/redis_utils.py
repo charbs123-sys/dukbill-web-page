@@ -82,7 +82,7 @@ def get_or_load_emails_json(hashed_email: str, s3_path: str) -> list:
         return documents
     
     logging.info(f"✗ Cache MISS for {hashed_email}, loading from S3...")
-    from S3_utils import get_json_file
+    from Backend.Database.S3_utils import get_json_file
     documents = get_json_file(hashed_email, s3_path)
     set_cached_emails_json(hashed_email, documents, mark_dirty=False)
     
@@ -113,7 +113,7 @@ def _handle_key_expiration(message):
                 documents = json.loads(dirty_data)
                 
                 # Save to S3
-                from S3_utils import save_json_file
+                from Backend.Database.S3_utils import save_json_file
                 save_json_file(hashed_email, S3_PATH, documents)
                 
                 logging.info(f"✓ Synced expired cache {hashed_email} to S3 on expiry")
@@ -182,7 +182,7 @@ def force_sync_to_s3(hashed_email: str, s3_path: str = S3_PATH) -> bool:
             logging.info(f"No cache data for {hashed_email}")
             return False
         
-        from S3_utils import save_json_file
+        from Backend.Database.S3_utils import save_json_file
         save_json_file(hashed_email, s3_path, documents)
         
         dirty_key = _get_dirty_flag_key(hashed_email)

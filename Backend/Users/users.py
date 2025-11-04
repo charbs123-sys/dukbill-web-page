@@ -1,4 +1,4 @@
-from db_utils import *
+from Backend.Database.db_utils import *
 from fastapi import HTTPException
 
 # ------------------------

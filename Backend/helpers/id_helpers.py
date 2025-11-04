@@ -1,8 +1,8 @@
 import hashlib
 from dukbill import verification_states_shufti
 from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
-from helper import jpg_to_pdf_simple, hash_email
-from documents import *
+from Backend.helpers.helper import jpg_to_pdf_simple, hash_email
+from Backend.Documents.documents import *
 
 def verify_signature(raw_data: bytes, sp_signature: str, secret_key: str) -> bool:
     """Verify the callback signature matches the expected hash."""
