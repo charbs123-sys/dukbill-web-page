@@ -52,6 +52,7 @@ oauth_states = {}
 verification_states_myob = {}
 verification_states_shufti = {}
 session_state = {}
+REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard")
 
 # ------------------------
 # CORS Settings
@@ -487,7 +488,7 @@ async def gmail_callback(code: str, state: str):
     ).start()
     
     return RedirectResponse(
-        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
+        REDIRECT_URL + "?scan=started"
     )
 
 # ------------------------
@@ -719,7 +720,7 @@ async def callback_xero(code: str = "", state: str = ""):
     connections = connections_response.json()
     if not connections:
         return RedirectResponse(
-            url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
+            url=REDIRECT_URL,
             status_code=303
         )
     
@@ -825,7 +826,7 @@ async def callback_xero(code: str = "", state: str = ""):
         result["pdf_error"] = str(e)
 
     return RedirectResponse(
-        url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
+        url=REDIRECT_URL,
         status_code=303
     )
     
@@ -966,7 +967,7 @@ async def myob_callback_compilation(request: Request, background_tasks: Backgrou
         hashed_user_email
     )
 
-    return RedirectResponse(url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard")
+    return RedirectResponse(url=REDIRECT_URL)
 
 def process_myob_data(code: str, business_id: str, state: str, hashed_user_email: str):
     try:
