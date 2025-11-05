@@ -698,6 +698,7 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
         raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
 
     doc_to_delete = documents.pop(doc_index)
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     save_emails_json_to_cache(hashed_email, documents)
 
     category = doc_to_delete.get("broker_document_category", "Uncategorized")
