@@ -572,7 +572,7 @@ async def notify_callback(request: Request):
         log_callback_event(event, reference)
         
         # Find the user associated with this verification
-        verification_state = get_verification_state(reference)
+        verification_state = get_verification_state(reference, get_verification_state)
         
         if not verification_state:
             # Still return 200 to acknowledge callback

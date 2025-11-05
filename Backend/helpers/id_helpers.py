@@ -1,5 +1,5 @@
 import hashlib
-from dukbill import verification_states_shufti
+#from dukbill import verification_states_shufti
 from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
 from helpers.helper import jpg_to_pdf_simple, hash_email
 from Documents.documents import *
@@ -20,7 +20,7 @@ def log_callback_event(event: str, reference: str):
     print(f"{'='*60}")
 
 
-def get_verification_state(reference: str) -> dict:
+def get_verification_state(reference: str, verification_states_shufti) -> dict:
     """Retrieve verification state for a reference."""
     verification_state = verification_states_shufti.get(reference)
     

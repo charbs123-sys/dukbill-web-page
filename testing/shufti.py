@@ -91,4 +91,3 @@ if sp_signature == calculated_signature:
         print(json_response)
 else:
         print('Invalid signature: {}'.format(response.content))
-
