@@ -1,11 +1,10 @@
 # xero_pdf_generators_aesthetic.py
-
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from S3_utils import upload_pdf_to_s3
+from Database.S3_utils import upload_pdf_to_s3
 
 # ---------- Shared aesthetic (matches MYOB) ----------
 

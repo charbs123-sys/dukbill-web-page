@@ -30,14 +30,11 @@ except Exception as e:
     logging.error(f"⚠ Redis connection failed: {e}. Caching disabled.")
     redis_client = None
 
-
 def _get_cache_key(hashed_email: str) -> str:
     return f"emails_json:{hashed_email}"
 
-
 def _get_dirty_flag_key(hashed_email: str) -> str:
     return f"emails_json_dirty:{hashed_email}"
-
 
 def get_cached_emails_json(hashed_email: str) -> list | None:
     if not redis_client:
@@ -56,7 +53,6 @@ def get_cached_emails_json(hashed_email: str) -> list | None:
     
     return None
 
-
 def set_cached_emails_json(hashed_email: str, documents: list, mark_dirty: bool = False) -> bool:
     if not redis_client:
         return False
@@ -74,7 +70,6 @@ def set_cached_emails_json(hashed_email: str, documents: list, mark_dirty: bool 
         logging.error(f"Redis set error: {e}")
         return False
 
-
 def get_or_load_emails_json(hashed_email: str, s3_path: str) -> list:
     documents = get_cached_emails_json(hashed_email)
     if documents is not None:
@@ -82,17 +77,15 @@ def get_or_load_emails_json(hashed_email: str, s3_path: str) -> list:
         return documents
     
     logging.info(f"✗ Cache MISS for {hashed_email}, loading from S3...")
-    from S3_utils import get_json_file
+    from Database.S3_utils import get_json_file
     documents = get_json_file(hashed_email, s3_path)
     set_cached_emails_json(hashed_email, documents, mark_dirty=False)
     
     return documents
 
-
 def save_emails_json_to_cache(hashed_email: str, documents: list) -> None:
     set_cached_emails_json(hashed_email, documents, mark_dirty=True)
     logging.info(f"✓ Updated cache for {hashed_email} (S3 sync on expiry)")
-
 
 def _handle_key_expiration(message):
     """
@@ -113,14 +106,13 @@ def _handle_key_expiration(message):
                 documents = json.loads(dirty_data)
                 
                 # Save to S3
-                from S3_utils import save_json_file
+                from Database.S3_utils import save_json_file
                 save_json_file(hashed_email, S3_PATH, documents)
                 
                 logging.info(f"✓ Synced expired cache {hashed_email} to S3 on expiry")
                 
     except Exception as e:
         logging.error(f"Error handling key expiration: {e}")
-
 
 def start_expiry_listener():
     """
@@ -154,7 +146,6 @@ def start_expiry_listener():
     
     return thread
 
-
 def invalidate_emails_json(hashed_email: str) -> bool:
     if not redis_client:
         return False
@@ -170,7 +161,6 @@ def invalidate_emails_json(hashed_email: str) -> bool:
         logging.error(f"Redis delete error: {e}")
         return False
 
-
 def force_sync_to_s3(hashed_email: str, s3_path: str = S3_PATH) -> bool:
     """Force immediate sync to S3"""
     if not redis_client:
@@ -182,7 +172,7 @@ def force_sync_to_s3(hashed_email: str, s3_path: str = S3_PATH) -> bool:
             logging.info(f"No cache data for {hashed_email}")
             return False
         
-        from S3_utils import save_json_file
+        from Database.S3_utils import save_json_file
         save_json_file(hashed_email, s3_path, documents)
         
         dirty_key = _get_dirty_flag_key(hashed_email)

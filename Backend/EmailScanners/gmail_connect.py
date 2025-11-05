@@ -11,7 +11,7 @@ from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES, SEARCH_QUERY
 import urllib.request
 import urllib.error
 
-from helper import get_email_domain
+from helpers.helper import get_email_domain
 from users import client_add_email
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"

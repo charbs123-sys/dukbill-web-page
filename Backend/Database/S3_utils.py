@@ -6,7 +6,7 @@ import base64
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from botocore.exceptions import ClientError
-from S3_init import s3, bucket_name
+from Database.S3_init import s3, bucket_name
 from config import CLOUDFRONT_DOMAIN
 import logging
 from io import BytesIO
@@ -133,10 +133,8 @@ def upload_pdf_to_s3(buffer, hashed_email, filename):
             s3_key,
             ExtraArgs={'ContentType': 'application/pdf'}
         )
-        print(f"✓ Uploaded to S3: s3://{bucket_name}/{s3_key}")
         return s3_key
     except ClientError as e:
-        print(f"✗ Failed to upload {filename}: {str(e)}")
         raise
 
 def upload_myob_pdf_to_s3(pdf_bytes, hashed_email, filename):
@@ -151,8 +149,6 @@ def upload_myob_pdf_to_s3(pdf_bytes, hashed_email, filename):
             s3_key,
             ExtraArgs={'ContentType': 'application/pdf'}
         )
-        print(f"✓ Uploaded to S3: s3://{bucket_name}/{s3_key}")
         return s3_key
     except ClientError as e:
-        print(f"✗ Failed to upload {filename}: {str(e)}")
         raise

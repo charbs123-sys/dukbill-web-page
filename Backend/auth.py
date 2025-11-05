@@ -3,13 +3,9 @@ from jwt import PyJWKClient
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from fastapi import HTTPException
-from config import AUTH0_DOMAIN, AUTH0_AUDIENCE, GOOGLE_CLIENT_ID
+from config import AUTH0_DOMAIN, AUTH0_AUDIENCE, GOOGLE_CLIENT_ID, XERO_CLIENT_ID, XERO_CLIENT_SECRET, XERO_REDIRECT_URI
 import os
 import httpx
-XERO_CLIENT_ID = os.getenv("XERO_CLIENT_ID")
-XERO_CLIENT_SECRET = os.getenv("XERO_CLIENT_SECRET")
-XERO_REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
-
 
 # Xero OAuth endpoints
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
@@ -46,7 +42,6 @@ def verify_token(token: str):
 
     except Exception as e:
         import traceback
-        traceback.print_exc()
         return None
 
 # ------------------------
@@ -58,29 +53,26 @@ def verify_google_token(token: str):
     Returns None if token is invalid or email is not verified.
     """
     try:
-        print(f"[AUTH] Attempting to verify Google token...")
         payload = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
 
         # Ensure email is verified
         if not payload.get("email_verified"):
-            print("[AUTH] Google email not verified")
             return None
 
-        print(f"[AUTH] Google token verified successfully for: {payload.get('email')}")
         return payload
 
     except ValueError as e:
-        print(f"[AUTH] Google token verification failed: {e}")
         return None
 
+# ------------------------
+# Xero Verification
+# ------------------------
 async def verify_xero_auth(code: str):
     """
     Verify Xero authorization code and return user information.
     Similar to your verify_google_token function.
     """
-    try:
-        print(f"[AUTH] Exchanging Xero authorization code for tokens...")
-        
+    try:   
         # Step 1: Exchange code for tokens
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
@@ -95,7 +87,6 @@ async def verify_xero_auth(code: str):
             )
             
             if token_response.status_code != 200:
-                print(f"[AUTH] Token exchange failed: {token_response.text}")
                 return None
             
             tokens = token_response.json()
@@ -113,13 +104,11 @@ async def verify_xero_auth(code: str):
             )
             
             if connections_response.status_code != 200:
-                print(f"[AUTH] Failed to get Xero connections")
                 return None
             
             connections = connections_response.json()
             
             if not connections:
-                print("[AUTH] No Xero organizations connected")
                 return None
             
             # Usually take the first connection, or let user choose
@@ -134,9 +123,7 @@ async def verify_xero_auth(code: str):
                 "refresh_token": tokens.get("refresh_token")  # For token refresh
             }
             
-            print(f"[AUTH] Xero auth verified successfully for: {user_data['email']}")
             return user_data
             
     except Exception as e:
-        print(f"[AUTH] Xero auth verification failed: {e}")
         return None
