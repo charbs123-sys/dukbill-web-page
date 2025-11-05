@@ -421,7 +421,7 @@ async def upload_document_card(
         raise HTTPException(status_code=400, detail="Invalid category_data JSON")
 
     new_doc = await upload_client_document(email, category, category_data_dict, file)
-    
+
     return {"status": "success", "uploaded_document": new_doc}
 
 # ------------------------

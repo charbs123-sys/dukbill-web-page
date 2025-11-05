@@ -83,10 +83,9 @@ class BasiqAPI:
         from_date = to_date - datetime.timedelta(days=years * 365)
 
         if not active_connections:
-            return [], []  # return empty lists if no connections
+            return []
 
-        bank_transactions = []
-        testing_transactions = []  # new array for all raw data
+        all_transactions = []
 
         for conn in active_connections:
             provider = conn.get("provider") or {}
@@ -103,8 +102,6 @@ class BasiqAPI:
                 r.raise_for_status()
                 data = r.json()
 
-                testing_transactions.extend(data.get("data", []))
-
                 for tx in data.get("data", []):
                     transactions.append({
                         "date": tx.get("postDate"),
@@ -114,12 +111,16 @@ class BasiqAPI:
 
                 url = data.get("links", {}).get("next")
 
-            bank_transactions.append({
-                "bank": bank_name,
-                "transactions": transactions
+            all_transactions.append({
+                "category": "Basiq Transactions",
+                "category_data": {
+                    "Basiq": bank_name
+                },
+                "transactions": transactions,
+                "connection_id": conn_id
             })
 
-        return bank_transactions
+        return all_transactions
 
 
 
