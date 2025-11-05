@@ -342,10 +342,10 @@ def get_xero_verified_documents_dashboard(client_id: str, emails: list) -> list:
             categories_map[formatted_type] = []
         
         categories_map[formatted_type].append({
-            "id": doc_type,  # e.g., "xero_accounts_report"
-            "company_name": formatted_type,  # e.g., "Accounts Report"
-            "payment_amount": 0,
-            "due_date": None,
+            "id": doc_type,
+            "category_data": {
+                "Xero Type": formatted_type
+            },
             "hashed_email": doc.get("hashed_email"),
             "files": doc.get("files", []),
             "file_count": len(doc.get("files", []))
@@ -425,15 +425,16 @@ def get_client_xero_documents(client_id: str, emails: list, category: str) -> li
             if matching_keys:
                 urls = [get_cloudfront_url(k) for k in matching_keys]
                 
-                all_xero_docs.append({
-                    "id": f"{hashed_email}_{report_filename.replace('.pdf', '')}",  # Unique ID per report
-                    "category": "Xero Reports",
-                    "company": category,  # Use the formatted category name
-                    "amount": 0,
-                    "due_date": None,
-                    "url": urls,
-                    "hashed_email": hashed_email,
-                })
+            all_xero_docs.append({
+                "id": f"{hashed_email}_{report_filename.replace('.pdf', '')}",  # Unique ID per report
+                "category": "Xero Reports",
+                "category_data": {
+                    "Xero Type": category  # preserve the previous company/category value
+                },
+                "url": urls,
+                "hashed_email": hashed_email,
+            })
+            
         except Exception as e:
             logging.error(f"Error fetching Xero reports for {hashed_email}: {e}")
             continue
@@ -509,13 +510,14 @@ def get_myob_verified_documents_dashboard(client_id: str, emails: list) -> list:
         
         categories_map[formatted_type].append({
             "id": doc_type,  # e.g., "Broker_Payroll_Summary"
-            "company_name": formatted_type,  # e.g., "Payroll Summary"
-            "payment_amount": 0,
-            "due_date": None,
+            "category_data": {
+                "MYOB Type": formatted_type  # preserve the previous company_name as a field
+            },
             "hashed_email": doc.get("hashed_email"),
             "files": doc.get("files", []),
             "file_count": len(doc.get("files", []))
         })
+
     
     headings = []
     if categories_map:
@@ -586,16 +588,17 @@ def get_client_myob_documents(client_id: str, emails: list, category: str) -> li
             # Only create entry if matching files found
             if doc_type_keys:
                 urls = [get_cloudfront_url(k) for k in doc_type_keys]
-                
-                all_myob_docs.append({
-                    "id": f"{hashed_email}_{doc_filename}",  # Unique ID per doc type
-                    "category": "MYOB Reports",
-                    "company": category,  # Use the formatted category name
-                    "amount": 0,
-                    "due_date": None,
-                    "url": urls,
-                    "hashed_email": hashed_email,
-                })
+                            
+            all_myob_docs.append({
+                "id": f"{hashed_email}_{doc_filename}",  # Unique ID per doc type
+                "category": "MYOB Reports",
+                "category_data": {
+                    "MYOB Type": category  # preserve the previous company/category value
+                },
+                "url": urls,
+                "hashed_email": hashed_email,
+            })
+        
         except Exception as e:
             logging.error(f"Error fetching MYOB reports for {hashed_email}: {e}")
             continue
