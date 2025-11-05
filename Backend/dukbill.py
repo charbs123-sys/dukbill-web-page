@@ -48,6 +48,7 @@ origins = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5000",
     "https://*.replit.dev",
+    "https://dukbillapp.com"
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -965,6 +966,80 @@ async def upload_document_card(
     email = user_obj["email"]
     new_doc = await upload_client_document(email, category, company, amount, date, file)
     return {"status": "success", "uploaded_document": new_doc}
+
+
+@app.get("/xero/connections")
+async def get_xero_connections(user=Depends(get_current_user)):
+    """
+    Fetch all Xero connections (organizations) for the logged-in user.
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    # Get user and client info
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    client = find_client(user_obj["user_id"])
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # Check if user has Xero tokens
+    if not tokens.get("access_token"):
+        raise HTTPException(status_code=400, detail="No Xero access token available. Connect first.")
+
+    # Fetch connections from Xero
+    response = requests.get(
+        "https://api.xero.com/connections",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        timeout=10
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to fetch Xero connections: {response.text}"
+        )
+
+    connections = response.json()
+    return {"connections": connections}
+
+@app.delete("/xero/connections/{connection_id}")
+async def delete_xero_connection(connection_id: str, user=Depends(get_current_user)):
+    """
+    Delete a specific Xero connection (organization) for the logged-in user.
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+
+    # Get user and client info
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    client = find_client(user_obj["user_id"])
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # Check if user has Xero access token
+    if not tokens.get("access_token"):
+        raise HTTPException(status_code=400, detail="No Xero access token available. Connect first.")
+
+    # Make request to Xero API to disconnect the connection
+    response = requests.delete(
+        f"https://api.xero.com/connections/{connection_id}",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        timeout=10
+    )
+
+    if response.status_code not in [200, 204]:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to delete Xero connection: {response.text}"
+        )
+
+    return {"status": "success", "message": f"Xero connection {connection_id} deleted"}
 
 # ------------------------
 # Health Check
