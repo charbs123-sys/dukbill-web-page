@@ -864,15 +864,21 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
 # ------------------------
 # Download Documents
 # ------------------------
-def get_download_url(hashed_email: str, category: str, threadid: str) -> str:
+def get_download_urls(hashed_email: str, category: str, threadid: str) -> str:
     prefix = f"{hashed_email}/categorised/{category}/pdfs/"
     response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
     files = response.get("Contents", [])
+    matched_urls = []
+
     for obj in files:
         key = obj["Key"]
         filename = key.split("/")[-1]
         if filename.startswith(threadid):
-            return f"https://{CLOUDFRONT_DOMAIN}/{key}"
+            url = f"https://{CLOUDFRONT_DOMAIN}/{key}"
+            matched_urls.append(url)
 
-    raise FileNotFoundError(f"No PDF found for threadid '{threadid}' in category '{category}'")
+    if not matched_urls:
+        raise FileNotFoundError(f"No PDFs found for threadid '{threadid}' in category '{category}'")
+
+    return matched_urls
