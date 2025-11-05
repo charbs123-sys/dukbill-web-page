@@ -403,9 +403,7 @@ async def delete_client_document_endpoint(
 @app.post("/upload/document/card")
 async def upload_document_card(
     category: str = Form(...),
-    company: str = Form(...),
-    amount: str = Form(...),
-    date: str = Form(...),
+    category_data: str = Form(...),
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
@@ -414,8 +412,16 @@ async def upload_document_card(
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
+
     email = user_obj["email"]
-    new_doc = await upload_client_document(email, category, company, amount, date, file)
+
+    try:
+        category_data_dict = json.loads(category_data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid category_data JSON")
+
+    new_doc = await upload_client_document(email, category, category_data_dict, file)
+    
     return {"status": "success", "uploaded_document": new_doc}
 
 # ------------------------
