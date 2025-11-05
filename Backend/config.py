@@ -1,9 +1,9 @@
 import os
 
 # Load .env only if running locally (i.e., not in ECS)
-if not os.environ.get("ECS_ENVIRONMENT"):  # You can set this variable in ECS task definition
+if not os.environ.get("ECS_ENVIRONMENT"):
     from dotenv import load_dotenv
-    load_dotenv()  # Reads from .env file in the project root
+    load_dotenv()
 
 # --- Database Configuration ---
 DB_CONFIG = {
@@ -31,6 +31,7 @@ S3_CONFIG = {
     "S3_BUCKET_NAME": os.environ.get("S3_BUCKET_NAME")
 }
 
+# --- Cloudfront Configuration ---
 CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
 
 # --- Basiq API Configuration ---
@@ -43,6 +44,12 @@ CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("REDIRECT_URI")
 SCOPES = os.environ.get("SCOPES")
 SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "has:attachment newer_than:2y")
+
+# --- Xero API Configuration ---
+XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
+XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
+XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
+XERO_SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
 
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = {

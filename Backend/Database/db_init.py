@@ -1,26 +1,23 @@
 from sqlalchemy import create_engine
-import os
-
-DB_USER = os.environ.get('DB_USER')
-DB_PASSWORD = os.environ.get('DB_PASSWORD')
-DB_HOST = os.environ.get('DB_HOST')
-DB_PORT = os.environ.get('DB_PORT', 3306)
-DB_NAME = os.environ.get('DB_NAME', 'dukbill')
-
-engine = create_engine(
-    f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
-    echo=False,
-    pool_pre_ping=True  # Verify connections before using them
-)
-
 from sqlalchemy.orm import DeclarativeBase
-from typing import List
 from typing import Optional
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import relationship
 from sqlalchemy import ForeignKey
 from sqlalchemy import String
+from config import DB_CONFIG
+
+DB_URL = (
+    f"mysql+mysqlconnector://{DB_CONFIG['user']}:{DB_CONFIG['password']}"
+    f"@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+)
+
+# Create SQLAlchemy engine
+engine = create_engine(
+    DB_URL,
+    echo=False,
+    pool_pre_ping=True
+)
 
 class Base(DeclarativeBase):
     pass
@@ -60,7 +57,5 @@ class Emails(Base):
 
 def initialize_database():
     """Create all tables if they don't exist"""
-    #Base.metadata.drop_all(engine)
-    #print("All tables dropped successfully")
     Base.metadata.create_all(engine)
-    print("Database tables created/verified successfully")
+    print("SQL Database initialized.")

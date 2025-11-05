@@ -1,45 +1,61 @@
+# ------------------------
+# FastAPI App Imports
+# ------------------------
 from fastapi import FastAPI, HTTPException, Depends, Body, Request, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse
+from fastapi import BackgroundTasks
 
+# ------------------------
+# Model Imports
+# ------------------------
 from pydantic import BaseModel
-from basiq_api import BasiqAPI
+from External_APIs.basiq_api import BasiqAPI
 
-from auth import verify_token, verify_google_token, verify_xero_auth
+# ------------------------
+# File Imports
+# ------------------------
+from config import AUTH0_DOMAIN, XERO_SCOPES
+from auth import *
 from users import *
-from documents import *
-from db_init import initialize_database
-from config import AUTH0_DOMAIN
-from S3_utils import *
-from gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
-from file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
+from Documents.documents import *
+from Database.db_init import initialize_database
+from Database.S3_utils import *
+from EmailScanners.gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
+from Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
 from redis_utils import start_expiry_listener
-from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
-from id_helpers import *
-from xero_helpers import *
-from xero_pdf_generation import *
+from shufti import shufti_url
+from helpers.id_helpers import *
+from helpers.xero_helpers import *
+from External_APIs.xero_pdf_generation import *
+from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
+from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
 
+# ------------------------
+# Python Imports
+# ------------------------
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.poolmanager import PoolManager
-import socket
 import threading
 import os
-from typing import List, Dict, Any
 import secrets
 import time
+import urllib
 from urllib.parse import urlencode
-
-oauth_states = {}
 
 # ------------------------
 # FastAPI App Initialization
 # ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
 basiq = BasiqAPI()
+oauth_states = {}
+verification_states_myob = {}
+verification_states_shufti = {}
+session_state = {}
 
-# CORS settings
+# ------------------------
+# CORS Settings
+# ------------------------
 origins = [
     "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev",
     "https://api.vericare.com.au",
@@ -50,6 +66,7 @@ origins = [
     "https://*.replit.dev",
     "https://dukbillapp.com"
 ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -91,7 +108,6 @@ def get_user_info_from_auth0(access_token: str):
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Auth0 request failed: {str(e)}")
     
-
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     claims = verify_token(token)
@@ -100,396 +116,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return claims, token
 
 # ------------------------
-# Startup
+# Redis Startup
 # ------------------------
-
 @app.on_event("startup")
 async def startup_event():
-    """Start Redis expiry listener when app starts"""
     start_expiry_listener()
-    print("✓ Application started with Redis expiry listener")
 
 # ------------------------
-# MYOB
-# ------------------------
-
-from myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
-verification_states_myob = {}
-@app.post("/myob/user_redirect")
-async def myob_redirect(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    client = find_client(user_obj["user_id"])
-    emails = get_client_emails(client["client_id"])
-    
-    # Generate a secure random state parameter
-    state = secrets.token_urlsafe(32)
-    
-    # Build auth URL with the state parameter
-    url_to_redirect = build_auth_url(state=state)
-    
-    # Store the mapping of state to user
-    verification_states_myob[state] = {
-        "user_id": user_obj["user_id"],
-        "auth0_id": auth0_id,
-        "email": user_obj["email"],
-        "created_at": time.time(),
-        "emails": emails,
-        "client_id": client["client_id"]
-    }
-    
-    return {
-        "verification_url": url_to_redirect,
-        "state": state  # Return state instead of reference
-    }
-
-import urllib
-
-from fastapi import BackgroundTasks
-from myob_pdf_generation import (
-    generate_payroll_pdf,
-    generate_sales_pdf,
-    generate_banking_pdf,
-    generate_purchases_pdf
-)
-@app.get("/myob/callback")
-async def myob_callback_compilation(request: Request, background_tasks: BackgroundTasks):
-    # Get query parameters from the callback URL
-    print("entered callback")
-    query_params = request.query_params
-    code = query_params.get("code")
-    code = urllib.parse.unquote(code)
-    business_id = query_params.get("businessId")
-    state = query_params.get("state")  # Important for security!
-    
-    if not code:
-        raise HTTPException(status_code=400, detail="No authorization code received")
-    
-    # Verify state parameter matches what you stored
-    if state not in verification_states_myob:
-        raise HTTPException(status_code=400, detail="Invalid state parameter")
-    
-    # Get the stored user data
-    user_data = verification_states_myob[state]
-    user_email = user_data.get("emails")
-
-    # Get the first email from the list
-    if isinstance(user_email, list) and user_email:
-        user_email = user_email[0]
-    elif not user_email:
-        raise HTTPException(status_code=400, detail="No email found for user")
-    
-    hashed_user_email = hash_email(user_email['email_address'])
-    
-    # Add the background processing task
-    background_tasks.add_task(
-        process_myob_data,
-        code,
-        business_id,
-        state,
-        hashed_user_email
-    )
-    
-    # Immediately redirect user to frontend success page
-    return RedirectResponse(url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard")  # Change to your frontend URL
-
-def process_myob_data(code: str, business_id: str, state: str, hashed_user_email: str):
-    """Background task to process MYOB data and generate PDFs"""
-    try:
-        # Exchange code for tokens
-        tokens = get_access_token_myob(code)
-        
-        if not tokens:
-            print("Failed to get access token")
-            return
-        
-        access_token = tokens.get("access_token")
-        refresh_token = tokens.get("refresh_token")
-        
-        # Retrieve MYOB data
-        myob_data = retrieve_endpoints_myob(access_token, business_id)
-
-        # Generate PDFs
-        payroll_pdf = generate_payroll_pdf(myob_data)
-        sales_pdf = generate_sales_pdf(myob_data)
-        banking_pdf = generate_banking_pdf(myob_data)
-        purchases_pdf = generate_purchases_pdf(myob_data)
-        
-        # Upload to S3
-        upload_myob_pdf_to_s3(payroll_pdf, hashed_user_email, "Broker_Payroll_Summary.pdf")
-        upload_myob_pdf_to_s3(sales_pdf, hashed_user_email, "Broker_Sales_Summary.pdf")
-        upload_myob_pdf_to_s3(banking_pdf, hashed_user_email, "Broker_Banking_Summary.pdf")
-        upload_myob_pdf_to_s3(purchases_pdf, hashed_user_email, "Broker_Purchases_Summary.pdf")
-        
-        print(f"✓ Successfully processed MYOB data for {hashed_user_email}")
-        
-    except Exception as e:
-        print(f"✗ Error processing MYOB data: {e}")
-    finally:
-        # Clean up the state
-        if state in verification_states_myob:
-            del verification_states_myob[state]
-
-# ------------------------
-# Shufti
-# ------------------------
-verification_states_shufti = {}
-@app.post("/shufti/user_redirect")
-async def shufti_redirect(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    emails = get_client_emails(client["client_id"])
-    # Get user info
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Create verification request
-    response = shufti_url(user_obj["email"], user_obj["user_id"])
-    if not response:
-        raise HTTPException(status_code=500, detail="Failed to create verification")
-    
-    reference = response.get("reference")
-
-    # Store the mapping of reference to user
-    verification_states_shufti[reference] = {
-        "user_id": user_obj["user_id"],
-        "auth0_id": auth0_id,
-        "email": user_obj["email"],
-        "created_at": time.time(),
-        "emails": emails,
-        "client_id": client["client_id"]
-    }
-    
-    return {
-        "verification_url": response["verification_url"],
-        "reference": reference
-    }
-
-@app.post('/profile/notifyCallback')
-async def notify_callback(request: Request):
-    try:
-        raw_data = await request.body()
-        response_data = await request.json()
-        
-        # Verify signature
-        SECRET_KEY = os.environ.get("SHUFTI_SECRET_KEY")
-        sp_signature = request.headers.get('signature', '')
-        
-        if not verify_signature(raw_data, sp_signature, SECRET_KEY):
-            raise HTTPException(status_code=401, detail="Invalid signature")
-        
-        reference = response_data.get('reference')
-        event = response_data.get('event')
-        
-        log_callback_event(event, reference)
-        
-        # Find the user associated with this verification
-        verification_state = get_verification_state(reference)
-        
-        if not verification_state:
-            # Still return 200 to acknowledge callback
-            return {"status": "success"}
-        
-        # Handle different event types
-        if event == 'verification.accepted':
-            await handle_verification_accepted(reference, verification_state)
-            del verification_states_shufti[reference]
-        
-        elif event == 'verification.declined':
-            handle_verification_declined(verification_state["user_id"], response_data)
-            del verification_states_shufti[reference]
-        
-        return {"status": "success"}
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ------------------------
-# Xero
-# ------------------------
-
-session_state = {}
-SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
-
-@app.get("/connect/xero")
-async def connect_xero(user=Depends(get_current_user)):
-    """Initiate Xero OAuth flow"""
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    emails = get_client_emails(client["client_id"])
-    print(emails)
-    hashed_email = hash_email(emails[0]["email_address"])
-    print("entered")
-
-    # Get user info
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
-    state = secrets.token_urlsafe(24)
-    session_state[state] = {"timestamp": int(time.time()), "hashed_email": hashed_email}
-    
-    params = {
-        "response_type": "code",
-        "client_id": XERO_CLIENT_ID,
-        "redirect_uri": XERO_REDIRECT_URI,
-        "scope": SCOPES,
-        "state": state,
-    }
-    print("this is state before")
-    print(state)
-    
-    auth_url = f"{AUTH_URL}?{urlencode(params)}"
-    return {"auth_url": auth_url}
-
-
-@app.get("/callback/xero")
-async def callback_xero(code: str = "", state: str = ""):
-    """Handle OAuth callback from Xero"""
-    global tenant_id
-    
-    # Verify state
-    if state not in session_state:
-        raise HTTPException(400, "Invalid state")
-    hashed_email = session_state[state]["hashed_email"]
-    session_state.pop(state)
-    
-    # Exchange code for tokens
-    token_response = requests.post(
-        TOKEN_URL,
-        headers={
-            "Authorization": f"Basic {get_basic_auth()}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": XERO_REDIRECT_URI
-        },
-        timeout=10,
-    )
-    
-    if token_response.status_code != 200:
-        raise HTTPException(400, f"Token exchange failed: {token_response.text}")
-    
-    # Save tokens
-    token_data = token_response.json()
-    tokens["access_token"] = token_data["access_token"]
-    tokens["refresh_token"] = token_data.get("refresh_token")
-    tokens["expires_at"] = int(time.time()) + int(token_data.get("expires_in", 1800))
-    tokens["scope"] = token_data.get("scope", "")
-    
-    # Get tenant/organization connections
-    connections_response = requests.get(
-        "https://api.xero.com/connections",
-        headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        timeout=10,
-    )
-    
-    if connections_response.status_code != 200:
-        raise HTTPException(400, f"Failed to get connections: {connections_response.text}")
-    
-    connections = connections_response.json()
-    if not connections:
-        return RedirectResponse(
-            url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
-            status_code=303
-        )
-    
-    # Use first organization
-    tenant_id = connections[0]["tenantId"]
-    org_name = connections[0]["tenantName"]
-    print('before fetch')
-    # Fetch all data
-    all_data = fetch_all_data(tenant_id)
-    print("after fetch")
-    # Transform to preview format for PDF generation
-    preview = {
-        "settings": {
-            "accounts": all_data["data"].get("accounts", [None])[0] if all_data["data"].get("accounts") else None,
-            "accounts_total": len(all_data["data"].get("accounts", [])),
-            "tax_rates": all_data["data"].get("tax_rates", [None])[0] if all_data["data"].get("tax_rates") else None,
-            "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
-            "tracking_categories": all_data["data"].get("tracking_categories", [None])[0] if all_data["data"].get("tracking_categories") else None,
-            "tracking_categories_total": len(all_data["data"].get("tracking_categories", [])),
-        },
-        "transactions": {
-            "bank_transactions": all_data["data"].get("bank_transactions", [None])[0] if all_data["data"].get("bank_transactions") else None,
-            "bank_transactions_total": len(all_data["data"].get("bank_transactions", [])),
-            "payments": all_data["data"].get("payments", [None])[0] if all_data["data"].get("payments") else None,
-            "payments_total": len(all_data["data"].get("payments", [])),
-            "credit_notes": all_data["data"].get("credit_notes", [None])[0] if all_data["data"].get("credit_notes") else None,
-            "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
-            "manual_journals": all_data["data"].get("manual_journals", [None])[0] if all_data["data"].get("manual_journals") else None,
-            "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
-            "overpayments": all_data["data"].get("overpayments", [None])[0] if all_data["data"].get("overpayments") else None,
-            "overpayments_total": len(all_data["data"].get("overpayments", [])),
-            "prepayments": all_data["data"].get("prepayments", [None])[0] if all_data["data"].get("prepayments") else None,
-            "prepayments_total": len(all_data["data"].get("prepayments", [])),
-            "invoices": all_data["data"].get("invoices", [None])[0] if all_data["data"].get("invoices") else None,
-            "invoices_total": len(all_data["data"].get("invoices", [])),
-            "bank_transfers": all_data["data"].get("bank_transfers", [None])[0] if all_data["data"].get("bank_transfers") else None,
-            "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
-        },
-        "payroll": {
-            "employees": all_data["data"].get("employees", [None])[0] if all_data["data"].get("employees") else None,
-            "employees_total": len(all_data["data"].get("employees", [])),
-            "payruns": all_data["data"].get("payruns", [None])[0] if all_data["data"].get("payruns") else None,
-            "payruns_total": len(all_data["data"].get("payruns", [])),
-            "payslips": all_data["data"].get("payslips", [None])[0] if all_data["data"].get("payslips") else None,
-            "payslips_total": len(all_data["data"].get("payslips", [])),
-        },
-        "reports": {
-            "profit_loss": all_data["data"].get("profit_loss"),
-            "balance_sheet": all_data["data"].get("balance_sheet"),
-        }
-    }
-    
-    result = {
-        "status": "success",
-        "organization": org_name,
-        "tenant_id": tenant_id,
-        "preview": preview
-    }
-    
-    if all_data.get("errors"):
-        result["errors"] = all_data["errors"]
-    
-    # Generate all PDF reports
-    try:
-        s3_keys = []
-        s3_keys.append(generate_accounts_report(result, "xero_accounts_report.pdf", hashed_email))
-        s3_keys.append(generate_transactions_report(result, "xero_transactions_report.pdf", hashed_email))
-        s3_keys.append(generate_payments_report(result, "xero_payments_report.pdf", hashed_email))
-        s3_keys.append(generate_credit_notes_report(result, "xero_credit_notes_report.pdf", hashed_email))
-        s3_keys.append(generate_payroll_report(result, "xero_payroll_report.pdf", hashed_email))
-        s3_keys.append(generate_invoices_report(result, "xero_invoices_report.pdf", hashed_email))
-        s3_keys.append(generate_bank_transfers_report(result, "xero_bank_transfers_report.pdf", hashed_email))
-        s3_keys.append(generate_reports_summary(result, "xero_financial_reports.pdf", hashed_email))
-        
-        result["pdf_reports"] = s3_keys
-        result["s3_bucket"] = bucket_name
-    except Exception as e:
-        result["pdf_error"] = str(e)
-
-    return RedirectResponse(
-        url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
-        status_code=303
-    )
-
-# ------------------------
-# Auth / User Routes
+# Auth Routes
 # ------------------------
 @app.post("/api/google-signup")
 async def google_signup(req: GoogleTokenRequest):
@@ -498,73 +132,15 @@ async def google_signup(req: GoogleTokenRequest):
         raise HTTPException(status_code=401, detail="Invalid Google token")
     return {"success": "User registered successfully"}
 
-@app.post("/api/xero-signup")
-async def xero_signup(req: XeroAuthRequest):
-    """
-    Exchange authorization code for tokens and get user info
-    Similar to your Google signup flow
-    """
-    user_data = await verify_xero_auth(req.code)
-    if not user_data:
-        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
-    
-    # user_data will contain email, name, xero_user_id, tenant_id
-    # Create/update user in your database here
-    
-    return {"success": "User registered successfully"}
-
-@app.post("/api/xero-signin")
-async def xero_signin(req: XeroAuthRequest):
-    """
-    Same flow as signup - Xero OAuth handles both
-    """
-    user_data = await verify_xero_auth(req.code)
-    if not user_data:
-        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
-    
-    # Look up existing user in your database
-    
-    return {"success": "User signed in successfully"}
-
-
-
-@app.post("/auth/client/register")
+@app.post("/auth/register")
 async def register(user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
-    user_obj = find_user(auth0_id)
-    missing_fields = []
 
-    if not user_obj:
-        # New user — register and mark missing fields
-        user_id = register_user(auth0_id, profile["email"], profile["picture"], profileComplete=False)
-        missing_fields = ["name", "company", "phone"]
-        return {
-            "user": user_id,
-            "isNewUser": True,
-            "missingFields": missing_fields,
-            "profileComplete": False,
-        }
-
-    if user_obj["profile_complete"]:
-        return {
-            "user": user_obj["user_id"],
-            "isNewUser": False,
-            "missingFields": [],
-            "profileComplete": True,
-        }
-
-    for field in ["name", "company", "phone"]:
-        if not user_obj.get(field):
-            missing_fields.append(field)
-
-    return {
-        "user": user_obj["user_id"],
-        "isNewUser": False,
-        "missingFields": missing_fields,
-        "profileComplete": False,
-    }
+    # Call the extracted core logic function
+    result = handle_registration(auth0_id, profile)
+    return result
 
 @app.post("/auth/check-verification")
 async def user_email_authentication(user=Depends(get_current_user)):
@@ -572,15 +148,27 @@ async def user_email_authentication(user=Depends(get_current_user)):
     profile = get_user_info_from_auth0(access_token)
     return {"email_verified": profile["email_verified"]}
 
-# @app.get("/auth/logout")
-# async def logout():
-#     logout_url = (
-#         f"https://{AUTH0_DOMAIN}/v2/logout?"
-#         f"client_id={AUTH0_CLIENT_ID}&"
-#         f"returnTo={POST_LOGOUT_REDIRECT_URI}&"
-#         f"federated"
-#     )
-#     return RedirectResponse(url=logout_url)
+# ------------------------
+# User Profile
+# ------------------------
+@app.get("/user/profile")
+async def fetch_user_profile(user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+
+    jwt_info = get_user_info_from_auth0(access_token)
+    
+    if user_obj["isBroker"]:
+        profile = find_broker(user_obj["user_id"])
+        profile_id = profile["broker_id"]
+        user_type = "broker"
+    else:
+        profile = find_client(user_obj["user_id"])
+        profile_id = profile["client_id"]
+        user_type = "client"
+
+    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_verified": jwt_info["email_verified"]}
 
 @app.patch("/users/onboarding")
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
@@ -607,71 +195,6 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
         "missingFields": [f for f in ["full_name", "phone_number", "company_name"] if not user_obj.get(f)],
         "validatedBroker": validatedBroker,
     }
-
-# ------------------------
-# Gmail Integration
-# ------------------------
-@app.post("/gmail/scan")
-async def gmail_scan(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-
-    state = secrets.token_urlsafe(32)
-    oauth_states[state] = {
-        "auth0_id": auth0_id,
-        "expires": time.time() + 600
-    }
-    
-    consent_url = get_google_auth_url(state)
-    return {"consent_url": consent_url}
-
-@app.get("/gmail/callback")
-async def gmail_callback(code: str, state: str):
-    state_data = oauth_states.get(state)
-    
-    if not state_data:
-        raise HTTPException(status_code=403, detail="Invalid or expired state token")
-    
-    if state_data["expires"] < time.time():
-        del oauth_states[state]
-        raise HTTPException(status_code=403, detail="State token expired")
-    
-    auth0_id = state_data["auth0_id"]
-    del oauth_states[state]
-    
-    user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    tokens = exchange_code_for_tokens(code)
-    access_token = tokens.get("access_token")
-    refresh_token = tokens.get("refresh_token")
-    
-    threading.Thread(
-        target=run_gmail_scan,
-        args=(client["client_id"], user_obj["email"], access_token, refresh_token),
-        daemon=True,
-    ).start()
-    
-    return RedirectResponse(
-        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
-    )
-# ------------------------
-# User Profile
-# ------------------------
-@app.get("/user/profile")
-async def fetch_user_profile(user=Depends(get_current_user)):
-    claims, access_token = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    if user_obj["isBroker"]:
-        profile = find_broker(user_obj["user_id"])
-        profile_id = profile["broker_id"]
-        user_type = "broker"
-    else:
-        profile = find_client(user_obj["user_id"])
-        profile_id = profile["client_id"]
-        user_type = "client"
-    # Need to remove email_scan from frontend
-    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_scan": False}
 
 @app.post("/add/email")
 async def add_email(email: str, user=Depends(get_current_user)):
@@ -740,13 +263,10 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     return documents
 
-
-
 @app.post("/broker/access")
 async def toggle_broker_access_route(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
-    
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
     
@@ -794,7 +314,7 @@ async def download_client_documents(client_id: int, user=Depends(get_current_use
         raise HTTPException(status_code=403, detail="Access denied")
 
     email = _first_email(get_client_emails(client_id))
-    result = _invoke_zip_lambda_for(email)  # {"zip_key":..., "presigned_url":..., ...}
+    result = _invoke_zip_lambda_for(email)
     zip_key = result["zip_key"]
     filename = f"client_{client_id}_documents.zip"
     return _stream_s3_zip(zip_key, filename)
@@ -804,50 +324,6 @@ async def verify_client_documents(client_id: int, user=Depends(get_current_user)
     toggle_client_verification(client_id)
     client = verify_client(client_id)
     return {"broker_verify": int(client["broker_verify"])}
-# ------------------------
-# Basiq Integration
-# ------------------------
-@app.get("/basiq/connect")
-async def connect_bank(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    if not user_obj["basiq_id"]:
-        basiq_user = basiq.create_user(user_obj["email"], user_obj["phone"])
-        add_basiq_id(user_obj["user_id"], basiq_user["id"])
-        user_obj = find_user(auth0_id)
-    client_token = basiq.get_client_access_token(user_obj["basiq_id"])
-    consent_url = f"https://consent.basiq.io/home?token={client_token}"
-    return RedirectResponse(consent_url)
-
-@app.get("/clients/bank/transactions")
-async def get_client_bank_transactions(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    basiq_id = user_obj.get("basiq_id")
-    if not basiq_id:
-        return {"transactions": []}
-    connections = basiq.get_user_connections(basiq_id).get("data", [])
-    if not connections:
-        return {"transactions": []}
-    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
-    return {"transactions": transactions}
-
-@app.get("/brokers/client/{client_id}/bank/transactions")
-async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
-    client = verify_client(client_id)
-    if not client.get("brokerAccess"):
-        return {"error": "Access denied"}
-    client_user = get_user_from_client(client_id)
-    basiq_id = client_user.get("basiq_id")
-    if not basiq_id:
-        return {"transactions": []}
-    connections = basiq.get_user_connections(basiq_id).get("data", [])
-    if not connections:
-        return {"transactions": []}
-    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
-    return {"transactions": transactions}
 
 # ------------------------
 # Document Routes
@@ -942,7 +418,392 @@ async def upload_document_card(
     new_doc = await upload_client_document(email, category, company, amount, date, file)
     return {"status": "success", "uploaded_document": new_doc}
 
+# ------------------------
+# Gmail Integration
+# ------------------------
+@app.post("/gmail/scan")
+async def gmail_scan(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
 
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {
+        "auth0_id": auth0_id,
+        "expires": time.time() + 600
+    }
+    
+    consent_url = get_google_auth_url(state)
+    return {"consent_url": consent_url}
+
+@app.get("/gmail/callback")
+async def gmail_callback(code: str, state: str):
+    state_data = oauth_states.get(state)
+    
+    if not state_data:
+        raise HTTPException(status_code=403, detail="Invalid or expired state token")
+    
+    if state_data["expires"] < time.time():
+        del oauth_states[state]
+        raise HTTPException(status_code=403, detail="State token expired")
+    
+    auth0_id = state_data["auth0_id"]
+    del oauth_states[state]
+    
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    tokens = exchange_code_for_tokens(code)
+    access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token")
+    
+    threading.Thread(
+        target=run_gmail_scan,
+        args=(client["client_id"], user_obj["email"], access_token, refresh_token),
+        daemon=True,
+    ).start()
+    
+    return RedirectResponse(
+        "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard?scan=started"
+    )
+
+# ------------------------
+# Basiq Integration
+# ------------------------
+@app.get("/basiq/connect")
+async def connect_bank(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj["basiq_id"]:
+        basiq_user = basiq.create_user(user_obj["email"], user_obj["phone"])
+        add_basiq_id(user_obj["user_id"], basiq_user["id"])
+        user_obj = find_user(auth0_id)
+    client_token = basiq.get_client_access_token(user_obj["basiq_id"])
+    consent_url = f"https://consent.basiq.io/home?token={client_token}"
+    return RedirectResponse(consent_url)
+
+@app.get("/clients/bank/transactions")
+async def get_client_bank_transactions(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    basiq_id = user_obj.get("basiq_id")
+    if not basiq_id:
+        return {"transactions": []}
+    connections = basiq.get_user_connections(basiq_id).get("data", [])
+    if not connections:
+        return {"transactions": []}
+    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
+    return {"transactions": transactions}
+
+@app.get("/brokers/client/{client_id}/bank/transactions")
+async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
+    client = verify_client(client_id)
+    if not client.get("brokerAccess"):
+        return {"error": "Access denied"}
+    client_user = get_user_from_client(client_id)
+    basiq_id = client_user.get("basiq_id")
+    if not basiq_id:
+        return {"transactions": []}
+    connections = basiq.get_user_connections(basiq_id).get("data", [])
+    if not connections:
+        return {"transactions": []}
+    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
+    return {"transactions": transactions}
+
+# ------------------------
+# Shufti
+# ------------------------
+@app.post("/shufti/user_redirect")
+async def shufti_redirect(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    # Get user info
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create verification request
+    response = shufti_url(user_obj["email"], user_obj["user_id"])
+    if not response:
+        raise HTTPException(status_code=500, detail="Failed to create verification")
+    
+    reference = response.get("reference")
+
+    # Store the mapping of reference to user
+    verification_states_shufti[reference] = {
+        "user_id": user_obj["user_id"],
+        "auth0_id": auth0_id,
+        "email": user_obj["email"],
+        "created_at": time.time(),
+        "emails": emails,
+        "client_id": client["client_id"]
+    }
+    
+    return {
+        "verification_url": response["verification_url"],
+        "reference": reference
+    }
+
+@app.post('/profile/notifyCallback')
+async def notify_callback(request: Request):
+    try:
+        raw_data = await request.body()
+        response_data = await request.json()
+        
+        # Verify signature
+        SECRET_KEY = os.environ.get("SHUFTI_SECRET_KEY")
+        sp_signature = request.headers.get('signature', '')
+        
+        if not verify_signature(raw_data, sp_signature, SECRET_KEY):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+        
+        reference = response_data.get('reference')
+        event = response_data.get('event')
+        
+        log_callback_event(event, reference)
+        
+        # Find the user associated with this verification
+        verification_state = get_verification_state(reference)
+        
+        if not verification_state:
+            # Still return 200 to acknowledge callback
+            return {"status": "success"}
+        
+        # Handle different event types
+        if event == 'verification.accepted':
+            await handle_verification_accepted(reference, verification_state)
+            del verification_states_shufti[reference]
+        
+        elif event == 'verification.declined':
+            handle_verification_declined(verification_state["user_id"], response_data)
+            del verification_states_shufti[reference]
+        
+        return {"status": "success"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ------------------------
+# Xero Routes
+# ------------------------
+@app.post("/api/xero-signup")
+async def xero_signup(req: XeroAuthRequest):
+    """
+    Exchange authorization code for tokens and get user info
+    Similar to your Google signup flow
+    """
+    user_data = await verify_xero_auth(req.code)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
+    
+    # user_data will contain email, name, xero_user_id, tenant_id
+    # Create/update user in your database here
+    
+    return {"success": "User registered successfully"}
+
+@app.post("/api/xero-signin")
+async def xero_signin(req: XeroAuthRequest):
+    """
+    Same flow as signup - Xero OAuth handles both
+    """
+    user_data = await verify_xero_auth(req.code)
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Invalid Xero authorization")
+    
+    # Look up existing user in your database
+    
+    return {"success": "User signed in successfully"}
+
+@app.get("/connect/xero")
+async def connect_xero(user=Depends(get_current_user)):
+    """Initiate Xero OAuth flow"""
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    hashed_email = hash_email(emails[0]["email_address"])
+
+    # Get user info
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    state = secrets.token_urlsafe(24)
+    session_state[state] = {"timestamp": int(time.time()), "hashed_email": hashed_email}
+    
+    params = {
+        "response_type": "code",
+        "client_id": XERO_CLIENT_ID,
+        "redirect_uri": XERO_REDIRECT_URI,
+        "scope": XERO_SCOPES,
+        "state": state,
+    }
+    
+    auth_url = f"{AUTH_URL}?{urlencode(params)}"
+    return {"auth_url": auth_url}
+
+@app.get("/callback/xero")
+async def callback_xero(code: str = "", state: str = ""):
+    """Handle OAuth callback from Xero"""
+    global tenant_id
+    
+    # Verify state
+    if state not in session_state:
+        raise HTTPException(400, "Invalid state")
+    hashed_email = session_state[state]["hashed_email"]
+    session_state.pop(state)
+    
+    # Exchange code for tokens
+    token_response = requests.post(
+        TOKEN_URL,
+        headers={
+            "Authorization": f"Basic {get_basic_auth()}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": XERO_REDIRECT_URI
+        },
+        timeout=10,
+    )
+    
+    if token_response.status_code != 200:
+        raise HTTPException(400, f"Token exchange failed: {token_response.text}")
+    
+    # Save tokens
+    token_data = token_response.json()
+    tokens["access_token"] = token_data["access_token"]
+    tokens["refresh_token"] = token_data.get("refresh_token")
+    tokens["expires_at"] = int(time.time()) + int(token_data.get("expires_in", 1800))
+    tokens["scope"] = token_data.get("scope", "")
+    
+    # Get tenant/organization connections
+    connections_response = requests.get(
+        "https://api.xero.com/connections",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        timeout=10,
+    )
+    
+    if connections_response.status_code != 200:
+        raise HTTPException(400, f"Failed to get connections: {connections_response.text}")
+    
+    connections = connections_response.json()
+    if not connections:
+        return RedirectResponse(
+            url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
+            status_code=303
+        )
+    
+    # Use first organization
+    tenant_id = connections[0]["tenantId"]
+    org_name = connections[0]["tenantName"]
+    
+    # Fetch all data
+    all_data = fetch_all_data(tenant_id)
+    
+    # Transform to preview format for PDF generation
+    preview = {
+        "settings": {
+            "accounts": (all_data["data"].get("accounts") or [None])[0],
+            "accounts_total": len(all_data["data"].get("accounts", [])),
+            "accounts_list": all_data["data"].get("accounts", []),
+
+            "tax_rates": (all_data["data"].get("tax_rates") or [None])[0],
+            "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
+            "tax_rates_list": all_data["data"].get("tax_rates", []),
+
+            "tracking_categories": (all_data["data"].get("tracking_categories") or [None])[0],
+            "tracking_categories_total": len(all_data["data"].get("tracking_categories", [])),
+            "tracking_categories_list": all_data["data"].get("tracking_categories", []),
+        },
+        "transactions": {
+            "bank_transactions": (all_data["data"].get("bank_transactions") or [None])[0],
+            "bank_transactions_total": len(all_data["data"].get("bank_transactions", [])),
+            "bank_transactions_list": all_data["data"].get("bank_transactions", []),
+
+            "payments": (all_data["data"].get("payments") or [None])[0],
+            "payments_total": len(all_data["data"].get("payments", [])),
+            "payments_list": all_data["data"].get("payments", []),
+
+            "credit_notes": (all_data["data"].get("credit_notes") or [None])[0],
+            "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
+            "credit_notes_list": all_data["data"].get("credit_notes", []),
+
+            "manual_journals": (all_data["data"].get("manual_journals") or [None])[0],
+            "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
+            "manual_journals_list": all_data["data"].get("manual_journals", []),
+
+            "overpayments": (all_data["data"].get("overpayments") or [None])[0],
+            "overpayments_total": len(all_data["data"].get("overpayments", [])),
+            "overpayments_list": all_data["data"].get("overpayments", []),
+
+            "prepayments": (all_data["data"].get("prepayments") or [None])[0],
+            "prepayments_total": len(all_data["data"].get("prepayments", [])),
+            "prepayments_list": all_data["data"].get("prepayments", []),
+
+            "invoices": (all_data["data"].get("invoices") or [None])[0],
+            "invoices_total": len(all_data["data"].get("invoices", [])),
+            "invoices_list": all_data["data"].get("invoices", []),
+
+            "bank_transfers": (all_data["data"].get("bank_transfers") or [None])[0],
+            "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
+            "bank_transfers_list": all_data["data"].get("bank_transfers", []),
+        },
+        "payroll": {
+            "employees": (all_data["data"].get("employees") or [None])[0],
+            "employees_total": len(all_data["data"].get("employees", [])),
+            "employees_list": all_data["data"].get("employees", []),
+
+            "payruns": (all_data["data"].get("payruns") or [None])[0],
+            "payruns_total": len(all_data["data"].get("payruns", [])),
+            "payruns_list": all_data["data"].get("payruns", []),
+
+            "payslips": (all_data["data"].get("payslips") or [None])[0],
+            "payslips_total": len(all_data["data"].get("payslips", [])),
+            "payslips_list": all_data["data"].get("payslips", []),
+        },
+        "reports": {
+            "profit_loss": all_data["data"].get("profit_loss"),
+            "balance_sheet": all_data["data"].get("balance_sheet"),
+        }
+    }
+    
+    result = {
+        "status": "success",
+        "organization": org_name,
+        "tenant_id": tenant_id,
+        "preview": preview
+    }
+    
+    if all_data.get("errors"):
+        result["errors"] = all_data["errors"]
+    
+    # Generate all PDF reports
+    try:
+        s3_keys = []
+        s3_keys.append(generate_accounts_report(result, "xero_accounts_report.pdf", hashed_email))
+        s3_keys.append(generate_transactions_report(result, "xero_transactions_report.pdf", hashed_email))
+        s3_keys.append(generate_payments_report(result, "xero_payments_report.pdf", hashed_email))
+        s3_keys.append(generate_credit_notes_report(result, "xero_credit_notes_report.pdf", hashed_email))
+        s3_keys.append(generate_payroll_report(result, "xero_payroll_report.pdf", hashed_email))
+        s3_keys.append(generate_invoices_report(result, "xero_invoices_report.pdf", hashed_email))
+        s3_keys.append(generate_bank_transfers_report(result, "xero_bank_transfers_report.pdf", hashed_email))
+        s3_keys.append(generate_reports_summary(result, "xero_financial_reports.pdf", hashed_email))
+        
+        result["pdf_reports"] = s3_keys
+        result["s3_bucket"] = bucket_name
+    except Exception as e:
+        result["pdf_error"] = str(e)
+
+    return RedirectResponse(
+        url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard",
+        status_code=303
+    )
+    
 @app.get("/xero/connections")
 async def get_xero_connections(user=Depends(get_current_user)):
     """
@@ -1017,55 +878,107 @@ async def delete_xero_connection(connection_id: str, user=Depends(get_current_us
     return {"status": "success", "message": f"Xero connection {connection_id} deleted"}
 
 # ------------------------
-# Health Check
+# MYOB
+# ------------------------
+@app.post("/myob/user_redirect")
+async def myob_redirect(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    client = find_client(user_obj["user_id"])
+    emails = get_client_emails(client["client_id"])
+    
+    state = secrets.token_urlsafe(32)
+    
+    url_to_redirect = build_auth_url(state=state)
+    
+    verification_states_myob[state] = {
+        "user_id": user_obj["user_id"],
+        "auth0_id": auth0_id,
+        "email": user_obj["email"],
+        "created_at": time.time(),
+        "emails": emails,
+        "client_id": client["client_id"]
+    }
+    
+    return {
+        "verification_url": url_to_redirect,
+        "state": state
+    }
+
+@app.get("/myob/callback")
+async def myob_callback_compilation(request: Request, background_tasks: BackgroundTasks):
+    query_params = request.query_params
+    code = query_params.get("code")
+    code = urllib.parse.unquote(code)
+    business_id = query_params.get("businessId")
+    state = query_params.get("state")
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="No authorization code received")
+    
+    if state not in verification_states_myob:
+        raise HTTPException(status_code=400, detail="Invalid state parameter")
+    
+    user_data = verification_states_myob[state]
+    user_email = user_data.get("emails")
+
+    if isinstance(user_email, list) and user_email:
+        user_email = user_email[0]
+    elif not user_email:
+        raise HTTPException(status_code=400, detail="No email found for user")
+    
+    hashed_user_email = hash_email(user_email['email_address'])
+    
+    background_tasks.add_task(
+        process_myob_data,
+        code,
+        business_id,
+        state,
+        hashed_user_email
+    )
+
+    return RedirectResponse(url="https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard")
+
+def process_myob_data(code: str, business_id: str, state: str, hashed_user_email: str):
+    try:
+        tokens = get_access_token_myob(code)
+        
+        if not tokens:
+            return
+        
+        access_token = tokens.get("access_token")
+        # refresh_token = tokens.get("refresh_token")
+        
+        myob_data = retrieve_endpoints_myob(access_token, business_id)
+
+        payroll_pdf = generate_payroll_pdf(myob_data)
+        sales_pdf = generate_sales_pdf(myob_data)
+        banking_pdf = generate_banking_pdf(myob_data)
+        purchases_pdf = generate_purchases_pdf(myob_data)
+        
+        # Upload to S3
+        upload_myob_pdf_to_s3(payroll_pdf, hashed_user_email, "Broker_Payroll_Summary.pdf")
+        upload_myob_pdf_to_s3(sales_pdf, hashed_user_email, "Broker_Sales_Summary.pdf")
+        upload_myob_pdf_to_s3(banking_pdf, hashed_user_email, "Broker_Banking_Summary.pdf")
+        upload_myob_pdf_to_s3(purchases_pdf, hashed_user_email, "Broker_Purchases_Summary.pdf")
+        
+    except Exception as e:
+        print(f"✗ Error processing MYOB data: {e}")
+    finally:
+        if state in verification_states_myob:
+            del verification_states_myob[state]
+
+# ------------------------
+# Health Checks
 # ------------------------
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}
 
-'''
-# ------------------------
-# IPv6 Check
-# ------------------------
-@app.get("/debug/network")
-async def debug_network():
-    """Debug endpoint to test network connectivity"""
-    import socket
-    results = {
-        "hostname": socket.gethostname(),
-        "ipv6_test": None,
-        "auth0_dns": None,
-        "auth0_connection": None
-    }
-
-    try:
-        # Test if we have IPv6 address
-        addrs = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6)
-        results["ipv6_test"] = f"Found {len(addrs)} IPv6 addresses"
-    except Exception as e:
-        results["ipv6_test"] = f"Error: {str(e)}"
-
-    try:
-        # Test Auth0 DNS resolution
-        addrs = socket.getaddrinfo(AUTH0_DOMAIN, 443, socket.AF_INET6)
-        results["auth0_dns"] = [addr[4][0] for addr in addrs[:3]]
-    except Exception as e:
-        results["auth0_dns"] = f"Error: {str(e)}"
-
-    try:
-        # Test actual connection
-        import requests
-        response = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=5)
-        results["auth0_connection"] = f"Success: {response.status_code}"
-    except Exception as e:
-        results["auth0_connection"] = f"Error: {str(e)}"
-
-    return results
-'''
-# ------------------------
-
-# Internet/NAT connectivity check
-# ------------------------
 @app.get("/internet/check")
 async def check_internet():
     """
@@ -1084,14 +997,12 @@ async def check_internet():
         "timestamp": int(time.time()),
     }
 
-    # 1) DNS
     try:
         socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)
         result["dns_ok"] = True
     except Exception as e:
         result["errors"].append(f"DNS resolution failed: {e!r}")
 
-    # 2) HTTPS + public IP (works over IPv4 NAT)
     try:
         req = urllib.request.Request(
             "https://api.ipify.org?format=json",
@@ -1109,7 +1020,6 @@ async def check_internet():
     except Exception as e:
         result["errors"].append(f"HTTPS request failed: {e!r}")
 
-    # 3) Optional HTTP (some orgs block 80—non-fatal)
     try:
         req = urllib.request.Request(
             "http://example.com/",
@@ -1121,9 +1031,9 @@ async def check_internet():
     except Exception:
         pass
 
-    # Exit code is only relevant if you run this as a script; for API we just return JSON
     return result
 
+# ------------------------
 # Run App
 # ------------------------
 if __name__ == "__main__":
