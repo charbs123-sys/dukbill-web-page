@@ -621,7 +621,6 @@ async def upload_client_document(client_email: str, category: str, category_data
     truncated_key = f"{hashed_email}/categorised/{category}/truncated/{filename}"
 
     file_bytes = await file.read()
-
     s3.upload_fileobj(io.BytesIO(file_bytes), bucket_name, pdf_key, ExtraArgs={"ContentType": "application/pdf"})
 
     truncated_bytes = truncate_pdf(file_bytes)
@@ -636,9 +635,8 @@ async def upload_client_document(client_email: str, category: str, category_data
     }
     
     documents.append(new_doc)
-
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     save_emails_json_to_cache(hashed_email, documents)
-
     return new_doc
 
 
@@ -847,12 +845,12 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
         documents[doc_index]["broker_document_category"] = update_data["category"]
 
     if "category_data" in update_data:
-        documents[doc_index]["category_data"] = update_data["category_data"]
-
+        documents[doc_index]["category_data"] = dict(update_data["category_data"])
+      
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
 
     new_category = documents[doc_index].get("broker_document_category")
     if old_category != new_category:
         move_pdfs_to_new_category(hashed_email, card_id, old_category, new_category)
-
+    
     return documents[doc_index]
