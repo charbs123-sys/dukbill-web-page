@@ -424,6 +424,25 @@ async def upload_document_card(
 
     return {"status": "success", "uploaded_document": new_doc}
 
+@app.get("/download/document")
+async def download_document(
+    id: str,
+    category: str,
+    hashed_email: str,
+    user=Depends(get_current_user)
+):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        urls = get_download_urls(hashed_email, category, id)
+        return {"urls": urls}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 # ------------------------
 # Gmail Integration
 # ------------------------

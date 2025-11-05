@@ -698,6 +698,7 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
         raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
 
     doc_to_delete = documents.pop(doc_index)
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     save_emails_json_to_cache(hashed_email, documents)
 
     category = doc_to_delete.get("broker_document_category", "Uncategorized")
@@ -859,3 +860,25 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
         move_pdfs_to_new_category(hashed_email, card_id, old_category, new_category)
     
     return documents[doc_index]
+
+# ------------------------
+# Download Documents
+# ------------------------
+def get_download_urls(hashed_email: str, category: str, threadid: str) -> str:
+    prefix = f"{hashed_email}/categorised/{category}/pdfs/"
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+
+    files = response.get("Contents", [])
+    matched_urls = []
+
+    for obj in files:
+        key = obj["Key"]
+        filename = key.split("/")[-1]
+        if filename.startswith(threadid):
+            url = f"https://{CLOUDFRONT_DOMAIN}/{key}"
+            matched_urls.append(url)
+
+    if not matched_urls:
+        raise FileNotFoundError(f"No PDFs found for threadid '{threadid}' in category '{category}'")
+
+    return matched_urls
