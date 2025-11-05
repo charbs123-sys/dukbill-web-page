@@ -17,17 +17,26 @@ try:
         host=REDIS_HOST,
         port=REDIS_PORT,
         decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5
+        socket_connect_timeout=10,
+        socket_timeout=10,
+        socket_keepalive=True,
+        socket_keepalive_options={
+            1: 60,
+            2: 10,
+            3: 3
+        }
     )
     redis_client.ping()
     
-    # Enable keyspace notifications for expired events
-    redis_client.config_set('notify-keyspace-events', 'Ex')
+    # Keyspace notifications already configured in parameter group
+    # No need to call config_set (it's disabled in ElastiCache)
     
     logging.info(f"✓ Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+except redis.ConnectionError as e:
+    logging.error(f"⚠ Redis connection failed: {e}. Check network/security groups.")
+    redis_client = None
 except Exception as e:
-    logging.error(f"⚠ Redis connection failed: {e}. Caching disabled.")
+    logging.error(f"⚠ Redis error: {e}. Caching disabled.")
     redis_client = None
 
 def _get_cache_key(hashed_email: str) -> str:
