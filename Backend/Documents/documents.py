@@ -41,9 +41,7 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
             if category in cat_list:
                 categories_map.setdefault(category, []).append({
                     "id": doc.get("threadid"),
-                    "company_name": doc.get("company", "Unknown"),
-                    "payment_amount": parse_amount(doc.get("amount")),
-                    "due_date": normalize_date(doc.get("date")),
+                    "category_data": doc.get("category_data"),
                     "hashed_email": doc.get("hashed_email"),
                 })
                 break
@@ -63,6 +61,7 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
             "categories": categories,
             "missing_categories": missing
         })
+
     return headings
 
 def get_client_category_documents(client_id: str, emails: list, category: str) -> list:
@@ -112,12 +111,11 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
             all_filtered_docs.append({
                 "id": threadid,
                 "category": category,
-                "company": doc.get("company", "Unknown"),
-                "amount": parse_amount(doc.get("amount")),
-                "due_date": normalize_date(doc.get("date")),
+                "category_data": doc.get("category_data"),
                 "url": urls,
                 "hashed_email": hashed_email,
             })
+
     return all_filtered_docs
 
 # ------------------------
@@ -607,10 +605,10 @@ def get_client_myob_documents(client_id: str, emails: list, category: str) -> li
 # ------------------------
 # Upload Documents
 # ------------------------
-async def upload_client_document(client_email: str, category: str, company: str, amount: float, date: str, file: UploadFile) -> dict:
+async def upload_client_document(client_email: str, category: str, category_data: dict, file: UploadFile) -> dict:
     """
-    Uploads a new client document to S3 (full PDF and truncated first page)
-    and updates the JSON metadata file. Ensures metadata file exists.
+    Uploads a new client document to S3 and updates the JSON metadata file.
+    Expects category_data as a dictionary.
     """
     hashed_email = hash_email(client_email)
 
@@ -633,16 +631,16 @@ async def upload_client_document(client_email: str, category: str, company: str,
     new_doc = {
         "threadid": threadid,
         "broker_document_category": category,
-        "company": company,
-        "amount": float(amount),
-        "date": date,
+        "category_data": category_data,
         "uploaded_at": datetime.utcnow().isoformat()
     }
-    documents.append(new_doc)
     
+    documents.append(new_doc)
+
     save_emails_json_to_cache(hashed_email, documents)
 
     return new_doc
+
 
 async def upload_bytes_to_s3(file_bytes: bytes, s3_key: str, bucket_name: str = None):
     """
@@ -833,14 +831,11 @@ def move_pdfs_to_new_category(hashed_email: str, threadid: str, old_category: st
 # Edit Documents
 # ------------------------          
 def edit_client_document(hashed_email: str, update_data: dict) -> dict:
-    """
-    Edits a client document metadata and moves PDFs if category changes.
-    """
     card_id = update_data.get("id")
     if not card_id:
         raise HTTPException(status_code=400, detail="Missing document id")
 
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == card_id), None)
     if doc_index is None:
@@ -848,10 +843,16 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
 
     old_category = documents[doc_index].get("broker_document_category")
 
-    field_mapping = {
-        "id": "threadid",
-        "category": "broker_document_category",
-        "company": "company",
-        "amount": "amount",
-        "date": "date"
-    }
+    if "category" in update_data:
+        documents[doc_index]["broker_document_category"] = update_data["category"]
+
+    if "category_data" in update_data:
+        documents[doc_index]["category_data"] = update_data["category_data"]
+
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+
+    new_category = documents[doc_index].get("broker_document_category")
+    if old_category != new_category:
+        move_pdfs_to_new_category(hashed_email, card_id, old_category, new_category)
+
+    return documents[doc_index]
