@@ -1,4 +1,4 @@
-FROM python:3.13
+FROM public.ecr.aws/docker/library/python:3.13
 WORKDIR /usr/local/app
 
 # Install the application dependencies
