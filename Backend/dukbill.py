@@ -431,11 +431,17 @@ async def download_document(
     hashed_email: str,
     user=Depends(get_current_user)
 ):
-    if not all([id, category, hashed_email]):
-        raise HTTPException(status_code=400, detail="Missing required query parameters")
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    url = get_download_url(hashed_email, category, id)
-    return {"url": url}
+    try:
+        urls = get_download_urls(hashed_email, category, id)
+        return {"urls": urls}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 # ------------------------
 # Gmail Integration
