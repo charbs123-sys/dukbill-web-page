@@ -424,6 +424,19 @@ async def upload_document_card(
 
     return {"status": "success", "uploaded_document": new_doc}
 
+@app.get("/download/document")
+async def download_document(
+    id: str,
+    category: str,
+    hashed_email: str,
+    user=Depends(get_current_user)
+):
+    if not all([id, category, hashed_email]):
+        raise HTTPException(status_code=400, detail="Missing required query parameters")
+
+    url = get_download_url(hashed_email, category, id)
+    return {"url": url}
+
 # ------------------------
 # Gmail Integration
 # ------------------------

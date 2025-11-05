@@ -859,3 +859,19 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
         move_pdfs_to_new_category(hashed_email, card_id, old_category, new_category)
     
     return documents[doc_index]
+
+# ------------------------
+# Download Documents
+# ------------------------
+def get_download_url(hashed_email: str, category: str, threadid: str) -> str:
+    prefix = f"{hashed_email}/categorised/{category}/pdfs/"
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+
+    files = response.get("Contents", [])
+    for obj in files:
+        key = obj["Key"]
+        filename = key.split("/")[-1]
+        if filename.startswith(threadid):
+            return f"https://{CLOUDFRONT_DOMAIN}/{key}"
+
+    raise FileNotFoundError(f"No PDF found for threadid '{threadid}' in category '{category}'")
