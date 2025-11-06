@@ -486,6 +486,9 @@ async def gmail_callback(code: str, state: str):
         args=(client["client_id"], user_obj["email"], access_token, refresh_token),
         daemon=True,
     ).start()
+
+    print("this is redirect url")
+    print(REDIRECT_URL)
     
     return RedirectResponse(
         REDIRECT_URL + "?scan=started"
