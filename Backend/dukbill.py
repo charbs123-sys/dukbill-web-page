@@ -406,14 +406,24 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
 
 @app.get("/brokers/client/{client_id}/documents/download")
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
+    claims, _ = user
     client = verify_client(client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-    if not client.get("brokerAccess"):
-        raise HTTPException(status_code=403, detail="Access denied")
+    if not client["brokerAccess"]:
+        return {"error": "Access denied"}
+    
+    client_user = get_user_from_client(client_id)
+    emails = get_client_emails(client_id)
+    
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+    
+    # Add login email if not present
+    if client_user["email"] not in email_addresses:
+        email_addresses.append(client_user["email"])
 
-    email = _first_email(get_client_emails(client_id))
-    result = _invoke_zip_lambda_for(email)
+    #email_to_download = emails[0]["email_address"] if isinstance(emails[0], dict) else emails[0]
+
+    result = _invoke_zip_lambda_for(email_addresses)
     zip_key = result["zip_key"]
     filename = f"client_{client_id}_documents.zip"
     return _stream_s3_zip(zip_key, filename)
