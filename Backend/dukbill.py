@@ -219,7 +219,22 @@ async def get_emails(user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     
-    return get_client_emails(client["client_id"])
+    return get_client_emails_dashboard(client["client_id"])
+
+@app.delete("/delete/email")
+async def delete_email(request: Request, user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+
+    data = await request.json()
+    email = data.get("email")
+    
+    client = find_client(user_obj["user_id"])
+    delete_client_email(client["client_id"], email)
+    
+    delete_email_documents(hash_email(email))
+    return {"message": "Email deleted successfully"}
 
 # ------------------------
 # Client Routes
@@ -273,6 +288,15 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     return documents
 
+@app.get("/get/brokers")
+async def get_brokers(user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+
+    return get_client_brokers(client["client_id"])
+    
 @app.post("/broker/access")
 async def toggle_broker_access_route(user=Depends(get_current_user)):
     claims, _ = user
@@ -495,10 +519,7 @@ async def gmail_callback(code: str, state: str):
         args=(client["client_id"], user_obj["email"], access_token, refresh_token),
         daemon=True,
     ).start()
-
-    print("this is redirect url")
-    print(REDIRECT_URL)
-    
+   
     return RedirectResponse(
         REDIRECT_URL + "?scan=started"
     )
@@ -579,8 +600,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
         "emails": emails,
         "client_id": client["client_id"]
     }
-    print("this is verification states")
-    print(verification_states_shufti)
+
     return {
         "verification_url": response["verification_url"],
         "reference": reference
@@ -603,14 +623,7 @@ async def notify_callback(request: Request):
         event = response_data.get('event')
         
         log_callback_event(event, reference)
-        print("this is verification states")
-        print(verification_states_shufti)
 
-        print("this is event")
-        print(event)
-        
-        print("this is refernece")
-        print(reference)
         # Pass both parameters as function signature requires
         verification_state = get_verification_state(reference, verification_states_shufti)
         
@@ -634,12 +647,8 @@ async def notify_callback(request: Request):
         return {"status": "success"}
         
     except Exception as e:
-        # Add logging to see what's actually failing
-        print(f"Error in notify_callback: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        # Return 200 to stop Shufti from retrying
-        return {"status": "acknowledged", "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ------------------------
 # Xero Routes
 # ------------------------

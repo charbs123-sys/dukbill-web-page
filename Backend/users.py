@@ -119,6 +119,9 @@ def get_client_emails(client_id):
     if verify_client(client_id):
         return get_client_emails_db(client_id)
 
+def get_client_brokers(client_id):
+    if verify_client(client_id):
+        return get_brokers_for_client(client_id)
 # ------------------------
 #  Broker
 # ------------------------
@@ -153,6 +156,18 @@ def get_client_emails(client_id):
     
     return get_client_emails_db(client_id)
 
+def get_client_emails_dashboard(client_id):
+    if not verify_client(client_id):
+        return False
+    
+    return get_client_emails_dashboard_db(client_id)
+
+def delete_client_email(client_id, email):
+    if not verify_client(client_id) or not verify_email(client_id, email):
+        raise HTTPException(status_code=403, detail="Invalid client or email")
+    
+    return delete_email_db(client_id, email)
+        
 # ------------------------
 #  Basiq
 # ------------------------
