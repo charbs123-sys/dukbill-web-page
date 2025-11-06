@@ -135,14 +135,13 @@ def toggle_client_verification(client_id):
 #  Emails
 # ------------------------
 def client_add_email(client_id, domain, email):
-    if not verify_client(client_id) and not verify_email(client_id, email):
-        return False
+    if not verify_client(client_id) or verify_email(client_id, email):
+        raise HTTPException(status_code=403, detail="Invalid client or email already exists")
 
     try:
         add_email_db(client_id, domain, email)
         return True
     except mysql.connector.errors.IntegrityError:
-        # Duplicate email for this client, ignore
         return False
     except Exception as e:
         print(f"Failed to add email {email}: {e}")
