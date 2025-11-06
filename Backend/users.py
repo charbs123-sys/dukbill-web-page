@@ -135,7 +135,7 @@ def toggle_client_verification(client_id):
 #  Emails
 # ------------------------
 def client_add_email(client_id, domain, email):
-    if not verify_client(client_id):
+    if not verify_client(client_id) and not verify_email(client_id, email):
         return False
 
     try:
