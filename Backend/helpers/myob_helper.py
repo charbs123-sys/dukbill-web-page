@@ -7,7 +7,6 @@ API_SECRET = os.environ.get("MYOB_SECRET")
 MYOB_REDIRECT_URI = os.environ.get("MYOB_REDIRECT_URL", "http://localhost:8080/myob/callback")
 SCOPE = "sme-banking sme-purchases sme-sales sme-payroll sme-company-file sme-contacts-customer sme-contacts-supplier"
 
-
 def build_auth_url(state):
     """Step 2: Build the authorization URL"""
     params = {
