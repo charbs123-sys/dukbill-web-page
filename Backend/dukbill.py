@@ -246,6 +246,13 @@ async def get_client_documents(user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+    
+    # Add login email if not present
+    if user_obj["email"] not in email_addresses:
+        emails.append({"email_address": user_obj["email"]})
+    
     headings = get_client_dashboard(client["client_id"], emails)
     verified_headings = get_client_verified_ids_dashboard(client["client_id"], [user_obj["email"]])
     xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], [user_obj["email"]])
@@ -272,6 +279,13 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
+
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+    
+    # Add login email if not present
+    if user_obj["email"] not in email_addresses:
+        emails.append({"email_address": user_obj["email"]})
 
     documents = get_client_category_documents(client["client_id"], emails, category)
 
