@@ -31,11 +31,23 @@ def _first_email(raw: List[Any]) -> str:
         return v.strip()
     raise HTTPException(status_code=400, detail="Invalid email format")
 
-def _invoke_zip_lambda_for(email: str) -> dict:
+def _invoke_zip_lambda_for(emails: List[str]) -> dict:
+    """
+    Invoke Lambda with a list of emails.
+    
+    Args:
+        emails: List of email strings, e.g., ["user1@example.com", "user2@example.com"]
+    
+    Returns:
+        dict: Lambda response body containing zip_key, presigned_url, etc.
+    """
+    # Prepare payload - Lambda expects {"emails": ["email1", "email2", ...]}
+    payload_data = {"emails": emails}
+    
     resp = lambda_client.invoke(
         FunctionName=ZIP_LAMBDA_NAME,
         InvocationType="RequestResponse",
-        Payload=json.dumps({"emails": email}).encode("utf-8"),
+        Payload=json.dumps(payload_data).encode("utf-8"),
     )
     payload = resp["Payload"].read().decode("utf-8")
     try:
@@ -48,7 +60,7 @@ def _invoke_zip_lambda_for(email: str) -> dict:
     if code == 200 and "zip_key" in body:
         return body
     if code == 404:
-        raise HTTPException(status_code=404, detail="No PDFs found for this client email")
+        raise HTTPException(status_code=404, detail="No PDFs found for the provided emails")
     err = body.get("error") if isinstance(body, dict) else "ZIP Lambda error"
     raise HTTPException(status_code=502, detail=f"Lambda failed: {err}")
 
