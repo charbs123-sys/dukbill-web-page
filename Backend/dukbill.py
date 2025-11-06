@@ -342,8 +342,31 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     client = verify_client(client_id)
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
+
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+    
+    # Add login email if not present
+    if client_user["email"] not in email_addresses:
+        emails.append({"email_address": client_user["email"]})
+
     headings = get_client_dashboard(client_id, emails)
-    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
+    verified_headings = get_client_verified_ids_dashboard(client["client_id"], [client_user["email"]])
+    xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], [client_user["email"]])
+    myob_verified_documents = get_myob_verified_documents_dashboard(client["client_id"], [client_user["email"]])
+
+    if verified_headings:
+        headings.extend(verified_headings)
+    if xero_verified_documents:
+        headings.extend(xero_verified_documents)
+    if myob_verified_documents:
+        headings.extend(myob_verified_documents)
+    
+    return {
+        "headings": headings, 
+        "BrokerAccess": client["brokerAccess"],
+        "loginEmail": client_user["email"]
+    }
 
 @app.post("/brokers/client/{client_id}/category/documents")
 async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):
@@ -351,10 +374,35 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     client = verify_client(client_id)
     if not client["brokerAccess"]:
         return {"error": "Access denied"}
+    
     category = request.get("category")
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
-    return get_client_category_documents(client_id, emails, category)
+    
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+    
+    # Add login email if not present
+    if client_user["email"] not in email_addresses:
+        emails.append({"email_address": client_user["email"]})
+    
+    documents = get_client_category_documents(client_id, emails, category)
+
+    if category in ["Driving License", "Id Card", "Passport"]:
+        verified_docs = get_client_verified_ids_documents(client_id, [client_user["email"]], category)
+        documents.extend(verified_docs)
+    
+    if category in ["Accounts Report", "Bank Transfers Report", "Credit Notes Report", 
+                    "Financial Reports", "Invoices Report", "Payments Report", 
+                    "Payroll Report", "Transactions Report"]:
+        xero_docs = get_client_xero_documents(client_id, [client_user["email"]], category)
+        documents.extend(xero_docs)
+    
+    if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
+        myob_docs = get_client_myob_documents(client_id, [client_user["email"]], category)
+        documents.extend(myob_docs)
+    
+    return documents  # Return list directly, not wrapped in a dict
 
 @app.get("/brokers/client/{client_id}/documents/download")
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
