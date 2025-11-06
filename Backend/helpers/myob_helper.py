@@ -4,7 +4,7 @@ import requests
 
 API_KEY = os.environ.get("MYOB_API_KEY")
 API_SECRET = os.environ.get("MYOB_SECRET")
-REDIRECT_URI = "http://localhost:8080/myob/callback"
+MYOB_REDIRECT_URI = os.environ.get("MYOB_REDIRECT_URL", "http://localhost:8080/myob/callback")
 SCOPE = "sme-banking sme-purchases sme-sales sme-payroll sme-company-file sme-contacts-customer sme-contacts-supplier"
 
 
@@ -12,7 +12,7 @@ def build_auth_url(state):
     """Step 2: Build the authorization URL"""
     params = {
         'client_id': API_KEY,
-        'redirect_uri': REDIRECT_URI,
+        'redirect_uri': MYOB_REDIRECT_URI,
         'response_type': 'code',
         'scope': SCOPE,
         'prompt': 'consent',
@@ -31,7 +31,7 @@ def get_access_token_myob(code):
         'client_id': API_KEY,
         'client_secret': API_SECRET,
         'code': code,
-        'redirect_uri': REDIRECT_URI,
+        'redirect_uri': MYOB_REDIRECT_URI,
         'grant_type': 'authorization_code'
     }
     
