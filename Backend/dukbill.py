@@ -52,7 +52,7 @@ oauth_states = {}
 verification_states_myob = {}
 verification_states_shufti = {}
 session_state = {}
-REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker.replit.dev/dashboard")
+REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker..dev/dashboard")
 
 # ------------------------
 # CORS Settings
@@ -211,6 +211,15 @@ async def add_email(email: str, user=Depends(get_current_user)):
     
     client_add_email(client["client_id"], domain, email)
     return {"message": "Email added successfully"}
+
+@app.get("/get/emails")
+async def get_emails(user=Depends(get_current_user)):
+    claims, access_token = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    
+    return get_client_emails(client["client_id"])
 
 # ------------------------
 # Client Routes

@@ -135,7 +135,7 @@ def toggle_client_verification(client_id):
 #  Emails
 # ------------------------
 def client_add_email(client_id, domain, email):
-    if not verify_client(client_id):
+    if not verify_client(client_id) and not verify_email(client_id, email):
         return False
 
     try:
@@ -147,6 +147,12 @@ def client_add_email(client_id, domain, email):
     except Exception as e:
         print(f"Failed to add email {email}: {e}")
         return False
+
+def get_client_emails(client_id):
+    if not verify_client(client_id):
+        return False
+    
+    return get_client_emails_db(client_id)
 
 # ------------------------
 #  Basiq
