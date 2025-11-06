@@ -295,7 +295,7 @@ async def get_brokers(user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
 
-    get_client_brokers(client["client_id"])
+    return get_client_brokers(client["client_id"])
     
 @app.post("/broker/access")
 async def toggle_broker_access_route(user=Depends(get_current_user)):
