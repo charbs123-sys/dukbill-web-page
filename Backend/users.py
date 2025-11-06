@@ -148,6 +148,12 @@ def client_add_email(client_id, domain, email):
         print(f"Failed to add email {email}: {e}")
         return False
 
+def get_client_emails(client_id):
+    if not verify_client(client_id):
+        return False
+    
+    return get_client_emails_db(client_id)
+
 # ------------------------
 #  Basiq
 # ------------------------
