@@ -604,7 +604,8 @@ async def notify_callback(request: Request):
         log_callback_event(event, reference)
         
         # Find the user associated with this verification
-        verification_state = get_verification_state(reference, get_verification_state)
+        # FIX: Remove the second parameter
+        verification_state = get_verification_state(reference)
         
         if not verification_state:
             # Still return 200 to acknowledge callback
@@ -613,17 +614,23 @@ async def notify_callback(request: Request):
         # Handle different event types
         if event == 'verification.accepted':
             await handle_verification_accepted(reference, verification_state)
-            del verification_states_shufti[reference]
+            # Only delete if the key exists
+            if reference in verification_states_shufti:
+                del verification_states_shufti[reference]
         
         elif event == 'verification.declined':
             handle_verification_declined(verification_state["user_id"], response_data)
-            del verification_states_shufti[reference]
+            if reference in verification_states_shufti:
+                del verification_states_shufti[reference]
         
         return {"status": "success"}
         
     except Exception as e:
+        # Add logging to see what's actually failing
+        print(f"Error in notify_callback: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
 # ------------------------
 # Xero Routes
 # ------------------------
