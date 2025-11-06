@@ -4,6 +4,7 @@ import os
 
 from dotenv import load_dotenv
 load_dotenv()
+REDIRECT_URI = os.environ.get("SHUFTI_REDIRECT_URI", "https://api.vericare.com.au/profile/notifyCallback")
 
 def shufti_url(user_email: str, user_id: int):
     """
@@ -18,7 +19,7 @@ def shufti_url(user_email: str, user_id: int):
     
     verification_request = {
         "reference": reference,
-        "callback_url": "https://api.vericare.com.au/profile/notifyCallback",
+        "callback_url": REDIRECT_URI,
         "email": user_email,  # Use actual user email
         "country": "AU",
         "language": "EN",
