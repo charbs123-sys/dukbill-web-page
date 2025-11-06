@@ -579,7 +579,8 @@ async def shufti_redirect(user=Depends(get_current_user)):
         "emails": emails,
         "client_id": client["client_id"]
     }
-    
+    print("this is verification states")
+    print(verification_states_shufti)
     return {
         "verification_url": response["verification_url"],
         "reference": reference
@@ -602,7 +603,14 @@ async def notify_callback(request: Request):
         event = response_data.get('event')
         
         log_callback_event(event, reference)
+        print("this is verification states")
+        print(verification_states_shufti)
+
+        print("this is event")
+        print(event)
         
+        print("this is refernece")
+        print(reference)
         # Pass both parameters as function signature requires
         verification_state = get_verification_state(reference, verification_states_shufti)
         
