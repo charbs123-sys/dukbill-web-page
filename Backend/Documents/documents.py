@@ -9,7 +9,7 @@ from redis_utils import (
     save_emails_json_to_cache,  # NEW - write-back
     force_sync_to_s3  # NEW - for critical operations
 )
-
+import os
 # ------------------------
 # Scanned Email Documents
 # ------------------------
