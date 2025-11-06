@@ -247,9 +247,9 @@ async def get_client_documents(user=Depends(get_current_user)):
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
     headings = get_client_dashboard(client["client_id"], emails)
-    verified_headings = get_client_verified_ids_dashboard(client["client_id"], emails)
-    xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], emails)
-    myob_verified_documents = get_myob_verified_documents_dashboard(client["client_id"], emails)
+    verified_headings = get_client_verified_ids_dashboard(client["client_id"], [user_obj["email"]])
+    xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], [user_obj["email"]])
+    myob_verified_documents = get_myob_verified_documents_dashboard(client["client_id"], [user_obj["email"]])
 
     if verified_headings:
         headings.extend(verified_headings)
@@ -257,7 +257,12 @@ async def get_client_documents(user=Depends(get_current_user)):
         headings.extend(xero_verified_documents)
     if myob_verified_documents:
         headings.extend(myob_verified_documents)
-    return {"headings": headings, "BrokerAccess": client["brokerAccess"]}
+    
+    return {
+        "headings": headings, 
+        "BrokerAccess": client["brokerAccess"],
+        "loginEmail": user_obj["email"]
+    }
 
 @app.post("/clients/category/documents")
 async def get_category_documents(request: dict, user=Depends(get_current_user)):
@@ -271,22 +276,20 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     documents = get_client_category_documents(client["client_id"], emails, category)
 
     if category in ["Driving License", "Id Card", "Passport"]:
-        verified_docs = get_client_verified_ids_documents(client["client_id"], emails, category)
+        verified_docs = get_client_verified_ids_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(verified_docs)
     
     # Check if category is a Xero report type
     if category in ["Accounts Report", "Bank Transfers Report", "Credit Notes Report", 
                     "Financial Reports", "Invoices Report", "Payments Report", 
                     "Payroll Report", "Transactions Report"]:
-        xero_docs = get_client_xero_documents(client["client_id"], emails, category)
+        xero_docs = get_client_xero_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(xero_docs)
     
     # Check if category is a MYOB report type
     if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
-        myob_docs = get_client_myob_documents(client["client_id"], emails, category)
+        myob_docs = get_client_myob_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(myob_docs)
-
-    return documents
 
 @app.get("/get/brokers")
 async def get_brokers(user=Depends(get_current_user)):
