@@ -3,7 +3,7 @@ import mysql.connector
 from helpers.helper import *
 from Database.db_init import *
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 # ------------------------
 # Generate Client/Broker ID
@@ -239,6 +239,35 @@ def toggle_broker_access_db(client_id):
             client.brokerAccess = not client.brokerAccess
             session.commit()
 
+def get_brokers_for_client(client_id: str):
+    with Session(engine) as session:
+        stmt = (
+            select(
+                Brokers.broker_id,
+                Users.name,
+                Users.picture,
+                Clients.broker_verify,
+                Clients.brokerAccess
+            )
+            .join(Clients, Brokers.broker_id == Clients.broker_id)
+            .join(Users, Brokers.user_id == Users.user_id)
+            .where(Clients.client_id == client_id)
+        )
+
+        results = session.execute(stmt).all()
+
+        brokers = []
+        for row in results:
+            brokers.append({
+                'broker_id': row.broker_id,
+                'name': row.name,
+                'picture': row.picture,
+                'broker_verify': row.broker_verify,
+                'brokerAccess': row.brokerAccess
+            })
+
+        return brokers
+   
 # ------------------------
 # Broker
 # ------------------------
@@ -292,6 +321,28 @@ def get_client_emails_db(client_id):
         results = session.execute(stmt).scalars().all()
         return [{'email_address': email} for email in results]
 
+def get_client_emails_dashboard_db(client_id):
+    with Session(engine) as session:
+        stmt = select(Emails.email_address, Emails.domain).where(Emails.client_id == client_id)
+        results = session.execute(stmt).all()
+        return [
+            {
+                'email_address': email_address,
+                'domain': domain
+            }
+            for email_address, domain in results
+        ]
+        
+def delete_email_db(client_id, email):
+    with Session(engine) as session:
+        stmt = delete(Emails).where(
+            Emails.client_id == client_id,
+            Emails.email_address == email
+        )
+        session.execute(stmt)
+        session.commit()
+        
+        return
 # ------------------------
 # Basiq API
 # ------------------------

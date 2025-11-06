@@ -9,7 +9,9 @@ from redis_utils import (
     save_emails_json_to_cache,  # NEW - write-back
     force_sync_to_s3  # NEW - for critical operations
 )
+
 import os
+
 # ------------------------
 # Scanned Email Documents
 # ------------------------
@@ -718,6 +720,35 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
             filename = key.split("/")[-1]
             if filename.startswith(threadid + "_") or filename.startswith(threadid):
                 s3.delete_object(Bucket=bucket_name, Key=key)
+
+def delete_email_documents(hashed_email: str) -> None:
+    """
+    Deletes all associated email documents and folders for a given hashed_email in S3.
+    """
+    if not hashed_email:
+        raise HTTPException(status_code=400, detail="Missing hashed_email")
+
+    # List of files and folders to delete
+    targets = [
+        f"{hashed_email}/batch_tracker.json",
+        f"{hashed_email}/pending_categories.json",
+        f"{hashed_email}/broker_anonymized/",
+        f"{hashed_email}/broker_filtered/",
+        f"{hashed_email}/categorised/",
+        f"{hashed_email}/raw_emails_history_broker/"
+    ]
+
+    for target in targets:
+        if target.endswith('/'):
+            paginator = s3.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket_name, Prefix=target):
+                for obj in page.get("Contents", []):
+                    s3.delete_object(Bucket=bucket_name, Key=obj["Key"])
+        else:
+            try:
+                s3.delete_object(Bucket=bucket_name, Key=target)
+            except s3.exceptions.NoSuchKey:
+                pass
 
 def delete_client_document_identity(doc_name: str, hashed_email: str):
     """
