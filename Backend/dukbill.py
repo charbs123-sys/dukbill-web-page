@@ -603,9 +603,8 @@ async def notify_callback(request: Request):
         
         log_callback_event(event, reference)
         
-        # Find the user associated with this verification
-        # FIX: Remove the second parameter
-        verification_state = get_verification_state(reference)
+        # Pass both parameters as function signature requires
+        verification_state = get_verification_state(reference, verification_states_shufti)
         
         if not verification_state:
             # Still return 200 to acknowledge callback
@@ -613,6 +612,7 @@ async def notify_callback(request: Request):
         
         # Handle different event types
         if event == 'verification.accepted':
+            # FIXED: Pass verification_state (the dict for this user), not verification_states_shufti
             await handle_verification_accepted(reference, verification_state)
             # Only delete if the key exists
             if reference in verification_states_shufti:
@@ -630,7 +630,8 @@ async def notify_callback(request: Request):
         print(f"Error in notify_callback: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return 200 to stop Shufti from retrying
+        return {"status": "acknowledged", "error": str(e)}
 # ------------------------
 # Xero Routes
 # ------------------------
