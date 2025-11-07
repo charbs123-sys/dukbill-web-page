@@ -652,12 +652,13 @@ async def shufti_redirect(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    emails = get_client_emails(client["client_id"])
-    # Get user info
-    user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
+    client = find_client(user_obj["user_id"])
+    #emails = get_client_emails(client["client_id"])
+    # Get user info
+    user_email = [user_obj["email"]]
+
     
     # Create verification request
     response = shufti_url(user_obj["email"], user_obj["user_id"])
@@ -672,7 +673,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
         "auth0_id": auth0_id,
         "email": user_obj["email"],
         "created_at": time.time(),
-        "emails": emails,
+        "emails": user_email,
         "client_id": client["client_id"]
     }
 
@@ -761,14 +762,11 @@ async def connect_xero(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
-    emails = get_client_emails(client["client_id"])
-    hashed_email = hash_email(emails[0]["email_address"])
-
-    # Get user info
-    user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
+    client = find_client(user_obj["user_id"])
+    hashed_email = hash_email(user_obj["email"])
+
     state = secrets.token_urlsafe(24)
     session_state[state] = {"timestamp": int(time.time()), "hashed_email": hashed_email}
     
@@ -1027,8 +1025,8 @@ async def myob_redirect(user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="User not found")
     
     client = find_client(user_obj["user_id"])
-    emails = get_client_emails(client["client_id"])
-    
+    #emails = get_client_emails(client["client_id"])
+    user_email = [user_obj["email"]]
     state = secrets.token_urlsafe(32)
     
     url_to_redirect = build_auth_url(state=state)
@@ -1038,7 +1036,7 @@ async def myob_redirect(user=Depends(get_current_user)):
         "auth0_id": auth0_id,
         "email": user_obj["email"],
         "created_at": time.time(),
-        "emails": emails,
+        "emails": user_email,
         "client_id": client["client_id"]
     }
     
