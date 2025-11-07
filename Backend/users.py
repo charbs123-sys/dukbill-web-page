@@ -139,7 +139,7 @@ def toggle_client_verification(client_id):
 # ------------------------
 def client_add_email(client_id, domain, email):
     if not verify_client(client_id) or verify_email(client_id, email):
-        raise HTTPException(status_code=403, detail="Invalid client or email already exists")
+        return True
 
     try:
         add_email_db(client_id, domain, email)
