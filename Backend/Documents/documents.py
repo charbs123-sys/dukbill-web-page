@@ -244,11 +244,12 @@ def get_client_verified_ids_documents(client_id: str, emails: list, category: st
             s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
             files = s3_objects.get("Contents", [])
 
-            pdf_keys = [obj["Key"] for obj in files if obj["Key"].endswith('.pdf')]
-            
             # Filter PDFs by the requested document type
             doc_type_keys = []
-            for key in pdf_keys:
+            for obj in files:
+                key = obj["Key"]
+                if not key.endswith('.pdf'):
+                    continue
                 filename = key.split("/")[-1]
                 # Check if filename starts with the requested doc_type_prefix
                 if filename.startswith(doc_type_prefix):
@@ -258,15 +259,15 @@ def get_client_verified_ids_documents(client_id: str, emails: list, category: st
             if doc_type_keys:
                 urls = [get_cloudfront_url(k) for k in doc_type_keys]
                 
-            all_verified_docs.append({
-                "id": f"{hashed_email}_{doc_type_prefix}",  # Unique ID per doc type
-                "category": "Verified IDs",
-                "category_data": {
-                    "Identity Verification": category  # preserve the previous company/category value
-                },
-                "url": urls,
-                "hashed_email": hashed_email,
-            })
+                all_verified_docs.append({
+                    "id": f"{hashed_email}_{doc_type_prefix}",  # Unique ID per doc type
+                    "category": category,  # Use the actual category parameter
+                    "category_data": {
+                        "Identity Verification": category
+                    },
+                    "url": urls,
+                    "hashed_email": hashed_email,
+                })
 
         except Exception as e:
             logging.error(f"Error fetching verified IDs for {hashed_email}: {e}")
