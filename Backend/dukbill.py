@@ -304,6 +304,8 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
         myob_docs = get_client_myob_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(myob_docs)
+        
+    return documents
 
 @app.get("/get/brokers")
 async def get_brokers(user=Depends(get_current_user)):
