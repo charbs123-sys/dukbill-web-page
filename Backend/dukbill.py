@@ -176,9 +176,9 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
+    user_obj = search_user_by_auth0(auth0_id)
     user_type = profile_data["user_type"]
     broker_id = profile_data.pop("broker_id", None)
-    user_obj = update_profile(auth0_id, profile_data)
     validatedBroker = False
 
     if user_type == "client":
@@ -189,6 +189,8 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     elif user_type == "broker":
         register_broker(user_obj["user_id"])
         validatedBroker = True
+
+    user_obj = update_profile(auth0_id, profile_data)
 
     return {
         "user": user_obj["user_id"],
@@ -304,7 +306,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
         myob_docs = get_client_myob_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(myob_docs)
-        
+
     return documents
 
 @app.get("/get/brokers")
@@ -962,7 +964,7 @@ async def get_xero_connections(user=Depends(get_current_user)):
     # Check if user has Xero tokens
     if not tokens.get("access_token"):
         raise HTTPException(status_code=400, detail="No Xero access token available. Connect first.")
-
+    
     # Fetch connections from Xero
     response = requests.get(
         "https://api.xero.com/connections",
@@ -975,7 +977,7 @@ async def get_xero_connections(user=Depends(get_current_user)):
             status_code=response.status_code,
             detail=f"Failed to fetch Xero connections: {response.text}"
         )
-
+    print(response.json())
     connections = response.json()
     return {"connections": connections}
 
@@ -1062,14 +1064,9 @@ async def myob_callback_compilation(request: Request, background_tasks: Backgrou
         raise HTTPException(status_code=400, detail="Invalid state parameter")
     
     user_data = verification_states_myob[state]
-    user_email = user_data.get("emails")
-
-    if isinstance(user_email, list) and user_email:
-        user_email = user_email[0]
-    elif not user_email:
-        raise HTTPException(status_code=400, detail="No email found for user")
+    user_email = user_data.get("email")
     
-    hashed_user_email = hash_email(user_email['email_address'])
+    hashed_user_email = hash_email(user_email)
     
     background_tasks.add_task(
         process_myob_data,
