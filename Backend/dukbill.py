@@ -31,7 +31,7 @@ from helpers.xero_helpers import *
 from External_APIs.xero_pdf_generation import *
 from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
 from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
-
+from cryptography.fernet import Fernet
 # ------------------------
 # Python Imports
 # ------------------------
@@ -48,12 +48,10 @@ from urllib.parse import urlencode
 # ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
 basiq = BasiqAPI()
-oauth_states = {}
-verification_states_myob = {}
 verification_states_shufti = {}
-session_state = {}
 REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker..dev/dashboard")
-
+STATE_PARAMETER = os.environ.get("STATE_SECRET_KEY")
+Encryption_function = Fernet(STATE_PARAMETER)
 # ------------------------
 # CORS Settings
 # ------------------------
@@ -115,6 +113,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return claims, token
+
 
 # ------------------------
 # Redis Startup
@@ -561,32 +560,26 @@ async def download_document(
 # ------------------------
 @app.post("/gmail/scan")
 async def gmail_scan(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
+    claims, token = user
 
-    state = secrets.token_urlsafe(32)
-    oauth_states[state] = {
-        "auth0_id": auth0_id,
-        "expires": time.time() + 600
-    }
-    
-    consent_url = get_google_auth_url(state)
+    encoded_token = token.encode()
+    encrypted_message = Encryption_function.encrypt(encoded_token)
+
+    consent_url = get_google_auth_url(encrypted_message)
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
 async def gmail_callback(code: str, state: str):
-    state_data = oauth_states.get(state)
-    
-    if not state_data:
-        raise HTTPException(status_code=403, detail="Invalid or expired state token")
-    
-    if state_data["expires"] < time.time():
-        del oauth_states[state]
-        raise HTTPException(status_code=403, detail="State token expired")
-    
-    auth0_id = state_data["auth0_id"]
-    del oauth_states[state]
-    
+
+    decrypted_key = Encryption_function.decrypt(state)
+    jwt_key = decrypted_key.decode()
+
+    claims = verify_token(jwt_key)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    auth0_id = claims["sub"]
+
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     tokens = exchange_code_for_tokens(code)
@@ -653,7 +646,7 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 # ------------------------
 @app.post("/shufti/user_redirect")
 async def shufti_redirect(user=Depends(get_current_user)):
-    claims, _ = user
+    claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
@@ -663,6 +656,8 @@ async def shufti_redirect(user=Depends(get_current_user)):
     # Get user info
     user_email = [user_obj["email"]]
 
+    encoded_token = token.encode()
+    encrypted_message = Encryption_function.encrypt(encoded_token)
     
     # Create verification request
     response = shufti_url(user_obj["email"], user_obj["user_id"])
@@ -763,23 +758,21 @@ async def xero_signin(req: XeroAuthRequest):
 @app.get("/connect/xero")
 async def connect_xero(user=Depends(get_current_user)):
     """Initiate Xero OAuth flow"""
-    claims, _ = user
+    claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+    print(user_obj)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-    client = find_client(user_obj["user_id"])
-    hashed_email = hash_email(user_obj["email"])
-
-    state = secrets.token_urlsafe(24)
-    session_state[state] = {"timestamp": int(time.time()), "hashed_email": hashed_email}
     
+    encoded_token = token.encode()
+    encrypted_message = Encryption_function.encrypt(encoded_token)
     params = {
         "response_type": "code",
         "client_id": XERO_CLIENT_ID,
         "redirect_uri": XERO_REDIRECT_URI,
         "scope": XERO_SCOPES,
-        "state": state,
+        "state": encrypted_message,
     }
     
     auth_url = f"{AUTH_URL}?{urlencode(params)}"
@@ -788,13 +781,20 @@ async def connect_xero(user=Depends(get_current_user)):
 @app.get("/callback/xero")
 async def callback_xero(code: str = "", state: str = ""):
     """Handle OAuth callback from Xero"""
-    global tenant_id
     
-    # Verify state
-    if state not in session_state:
-        raise HTTPException(400, "Invalid state")
-    hashed_email = session_state[state]["hashed_email"]
-    session_state.pop(state)
+    decrypted_key = Encryption_function.decrypt(state)
+    jwt_key = decrypted_key.decode()
+    
+    claims = verify_token(jwt_key)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    hashed_email = hash_email(user_obj["email"])
+
     
     # Exchange code for tokens
     token_response = requests.post(
@@ -1022,31 +1022,20 @@ async def delete_xero_connection(connection_id: str, user=Depends(get_current_us
 # ------------------------
 @app.post("/myob/user_redirect")
 async def myob_redirect(user=Depends(get_current_user)):
-    claims, _ = user
+    claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    client = find_client(user_obj["user_id"])
-    #emails = get_client_emails(client["client_id"])
-    user_email = [user_obj["email"]]
-    state = secrets.token_urlsafe(32)
-    
-    url_to_redirect = build_auth_url(state=state)
-    
-    verification_states_myob[state] = {
-        "user_id": user_obj["user_id"],
-        "auth0_id": auth0_id,
-        "email": user_obj["email"],
-        "created_at": time.time(),
-        "emails": user_email,
-        "client_id": client["client_id"]
-    }
-    
+
+    encoded_token = token.encode()
+    encrypted_message = Encryption_function.encrypt(encoded_token)
+
+    url_to_redirect = build_auth_url(state=encrypted_message)
+
     return {
         "verification_url": url_to_redirect,
-        "state": state
+        "state": encrypted_message
     }
 
 @app.get("/myob/callback")
@@ -1057,16 +1046,19 @@ async def myob_callback_compilation(request: Request, background_tasks: Backgrou
     business_id = query_params.get("businessId")
     state = query_params.get("state")
     
-    if not code:
-        raise HTTPException(status_code=400, detail="No authorization code received")
+    decrypted_key = Encryption_function.decrypt(state)
+    jwt_key = decrypted_key.decode()
+
+    claims = verify_token(jwt_key)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
     
-    if state not in verification_states_myob:
-        raise HTTPException(status_code=400, detail="Invalid state parameter")
-    
-    user_data = verification_states_myob[state]
-    user_email = user_data.get("email")
-    
-    hashed_user_email = hash_email(user_email)
+    hashed_user_email = hash_email(user_obj["email"])
     
     background_tasks.add_task(
         process_myob_data,
@@ -1103,9 +1095,6 @@ def process_myob_data(code: str, business_id: str, state: str, hashed_user_email
         
     except Exception as e:
         print(f"✗ Error processing MYOB data: {e}")
-    finally:
-        if state in verification_states_myob:
-            del verification_states_myob[state]
 
 # ------------------------
 # Health Checks
