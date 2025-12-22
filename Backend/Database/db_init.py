@@ -44,9 +44,15 @@ class Clients(Base):
     __tablename__ = "clients"
     client_id: Mapped[str] = mapped_column(String(6), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
-    broker_id: Mapped[str] = mapped_column(ForeignKey("brokers.broker_id"), nullable=False)
+
+class ClientBroker(Base):
+    __tablename__ = "client_broker"
+    client_broker_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(String(6), ForeignKey("clients.client_id"), nullable=False)
+    broker_id: Mapped[str] = mapped_column(String(6), ForeignKey("brokers.broker_id"), nullable=False)
     broker_verify: Mapped[bool] = mapped_column(nullable=False, default=False)
     brokerAccess: Mapped[bool] = mapped_column(nullable=False, default=False)
+
 
 class Emails(Base):
     __tablename__ = "emails"

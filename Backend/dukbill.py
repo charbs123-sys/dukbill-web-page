@@ -32,6 +32,7 @@ from External_APIs.xero_pdf_generation import *
 from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
 from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
 from cryptography.fernet import Fernet
+from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
 # ------------------------
 # Python Imports
 # ------------------------
@@ -219,8 +220,7 @@ async def get_emails(user=Depends(get_current_user)):
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
-    
-    return get_client_emails_dashboard(client["client_id"])
+    return get_client_emails_dashboard(client["client_id"]) if client else []
 
 @app.delete("/delete/email")
 async def delete_email(request: Request, user=Depends(get_current_user)):
@@ -266,9 +266,11 @@ async def get_client_documents(user=Depends(get_current_user)):
     if myob_verified_documents:
         headings.extend(myob_verified_documents)
     
+    
+
     return {
         "headings": headings, 
-        "BrokerAccess": client["brokerAccess"],
+        "BrokerAccess": get_client_broker_list(client["client_id"]),
         "loginEmail": user_obj["email"]
     }
 
@@ -308,24 +310,48 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     return documents
 
+@app.post("/add/broker")
+async def add_broker(broker_id: str, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    registered_broker_id = register_client_broker(client["client_id"], broker_id)
+    if not registered_broker_id:
+        raise HTTPException(status_code=400, detail="Invalid broker ID")
+    
+    return {"broker_id": registered_broker_id}
+
 @app.get("/get/brokers")
 async def get_brokers(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
+    client = find_client(user_obj["user_id"])    
 
     return get_client_brokers(client["client_id"])
     
 @app.post("/broker/access")
-async def toggle_broker_access_route(user=Depends(get_current_user)):
+async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
     
-    toggle_broker_access(client["client_id"])
-    return {"BrokerAccess": not client["brokerAccess"]}
+    return {"BrokerAccess": toggle_broker_access(client["client_id"], broker_id)}
+
+@app.post("/client/broker/delete")
+async def delete_client_broker(broker_id: str, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    remove_client_broker(client["client_id"], broker_id)
+    return {"message": "Broker removed successfully"}
+
 
 # ------------------------
 # Broker Routes
@@ -367,7 +393,7 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     
     return {
         "headings": headings, 
-        "BrokerAccess": client["brokerAccess"],
+        "BrokerAccess": get_client_broker_list(client["client_id"]),
         "loginEmail": client_user["email"]
     }
 
@@ -375,7 +401,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
 async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):
     claims, _ = user
     client = verify_client(client_id)
-    if not client["brokerAccess"]:
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
     
     category = request.get("category")
@@ -411,9 +438,10 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
     claims, _ = user
     client = verify_client(client_id)
-    if not client["brokerAccess"]:
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
-    
+
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
     
@@ -596,6 +624,61 @@ async def gmail_callback(code: str, state: str):
         REDIRECT_URL + "?scan=started"
     )
 
+#
+# Outlook integration
+#
+
+@app.post("/outlook/scan")
+async def outlook_scan(user=Depends(get_current_user)):
+    claims, token = user
+
+    # Encode user token into 'state' to persist session across redirect
+    encoded_token = token.encode()
+    encrypted_message = Encryption_function.encrypt(encoded_token)
+
+    consent_url = get_outlook_auth_url(encrypted_message)
+    return {"consent_url": consent_url}
+
+
+@app.get("/outlook/callback")
+async def outlook_callback(code: str, state: str):
+    # 1. Decrypt state to get back the original user token
+    try:
+        decrypted_key = Encryption_function.decrypt(state)
+        jwt_key = decrypted_key.decode()
+        claims = verify_token(jwt_key) # Validate the user is still authenticated
+        if not claims:
+            raise Exception("Invalid token")
+    except Exception:
+         raise HTTPException(status_code=401, detail="Invalid or expired session state")
+
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+
+    # 2. Exchange Authorization Code for Microsoft Tokens
+    try:
+        tokens = exchange_outlook_code_for_tokens(code)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+
+    access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token") # Will be None if 'offline_access' scope is missing
+
+    # 3. Start Background Scan
+    threading.Thread(
+        target=run_outlook_scan, # You need to define this function similar to run_gmail_scan
+        args=(client["client_id"], user_obj["email"], access_token, refresh_token),
+        daemon=True,
+    ).start()
+   
+    # 4. Redirect user back to frontend
+    return RedirectResponse(
+        REDIRECT_URL + "?scan=started"
+    )
+
+
+
 # ------------------------
 # Basiq Integration
 # ------------------------
@@ -629,7 +712,8 @@ async def get_client_bank_transactions(user=Depends(get_current_user)):
 @app.get("/brokers/client/{client_id}/bank/transactions")
 async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
     client = verify_client(client_id)
-    if not client.get("brokerAccess"):
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
     client_user = get_user_from_client(client_id)
     basiq_id = client_user.get("basiq_id")
@@ -661,6 +745,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
     
     # Create verification request
     response = shufti_url(user_obj["email"], user_obj["user_id"])
+    print(response)
     if not response:
         raise HTTPException(status_code=500, detail="Failed to create verification")
     

@@ -87,7 +87,9 @@ def register_user(auth0_id, email, picture, profileComplete):
 
 def register_client(user_id, broker_id):
     if verify_user(user_id) and verify_broker(broker_id):
-        return add_client(user_id, broker_id)
+        client_id = add_client(user_id)
+        add_client_broker(client_id, broker_id)
+        return client_id
     else:
         raise HTTPException(status_code=403, detail="Invalid Broker ID")
 
@@ -110,10 +112,10 @@ def update_profile(auth0_id: str, profile_data: dict):
 # ------------------------
 #  Client
 # ------------------------
-def toggle_broker_access(client_id):
-    if not verify_client(client_id):
+def toggle_broker_access(client_id, broker_id):
+    if not verify_client(client_id) and not verify_broker(broker_id):
         raise HTTPException(status_code=403, detail="Invalid client")
-    toggle_broker_access_db(client_id)
+    return toggle_broker_access_db(client_id, broker_id)
 
 def get_client_emails(client_id):
     if verify_client(client_id):
@@ -122,6 +124,19 @@ def get_client_emails(client_id):
 def get_client_brokers(client_id):
     if verify_client(client_id):
         return get_brokers_for_client(client_id)
+    
+def register_client_broker(client_id, broker_id):
+    if verify_client(client_id) and verify_broker(broker_id):
+        return add_client_broker(client_id, broker_id)
+    else:
+        raise HTTPException(status_code=403, detail="Invalid client or broker")
+
+def remove_client_broker(client_id, broker_id):
+    if not verify_client(client_id) or not verify_broker(broker_id):
+        raise HTTPException(status_code=403, detail="Invalid client or broker")
+    
+    delete_client_broker_db(client_id, broker_id)
+
 # ------------------------
 #  Broker
 # ------------------------
@@ -133,6 +148,16 @@ def toggle_client_verification(client_id):
     if not verify_client(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
     toggle_client_verify_db(client_id)
+
+#
+# Client Broker
+#
+
+def get_client_broker_list(client_id):
+    if not verify_client(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client or broker")
+    
+    return get_client_brokers_db(client_id)
 
 # ------------------------
 #  Emails
