@@ -351,12 +351,21 @@ def get_clients_for_broker(broker_id):
         
         return clients
 
-def toggle_client_verify_db(client_id):
+def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
     with Session(engine) as session:
-        client = session.get(Clients, client_id)
-        if client:
-            client.broker_verify = not client.broker_verify
-            session.commit()
+        cb = session.execute(
+            select(ClientBroker)
+            .where(ClientBroker.client_id == client_id)
+            .where(ClientBroker.broker_id == broker_id)
+        ).scalar_one_or_none()
+
+        if not cb:
+            return None
+
+        cb.broker_verify = not cb.broker_verify
+        session.commit()
+        session.refresh(cb)
+        return cb.broker_verify
 
 # ------------------------
 # Email
