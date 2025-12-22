@@ -147,7 +147,7 @@ def get_broker_clients(broker_id):
 def toggle_client_verification(client_id, broker_id):
     if not verify_client(client_id) and not verify_broker(broker_id):
         raise HTTPException(status_code=403, detail="Invalid client")
-    toggle_client_verify_db(client_id, broker_id)
+    return toggle_client_verify_db(client_id, broker_id)
 
 #
 # Client Broker

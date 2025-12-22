@@ -466,9 +466,9 @@ async def verify_client_documents(client_id: int, user=Depends(get_current_user)
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
     
-    toggle_client_verification(client_id, broker["broker_id"])
-    client = verify_client(client_id)
-    return {"broker_verify": int(client["broker_verify"])}
+    broker_verify = toggle_client_verification(client_id, broker["broker_id"])
+    #client = verify_client(client_id)
+    return {"broker_verify": broker_verify}
 
 # ------------------------
 # Document Routes
