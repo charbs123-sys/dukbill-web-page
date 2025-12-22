@@ -461,14 +461,14 @@ async def download_client_documents(client_id: int, user=Depends(get_current_use
 
 @app.post("/brokers/client/{client_id}/verify")
 async def verify_client_documents(client_id: int, user=Depends(get_current_user)):
-    claims,  = user
+    claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
     
-    toggle_client_verification(client_id, broker["broker_id"])
-    client = verify_client(client_id)
-    return {"broker_verify": int(client["broker_verify"])}
+    broker_verify = toggle_client_verification(client_id, broker["broker_id"])
+    #client = verify_client(client_id)
+    return {"broker_verify": broker_verify}
 
 # ------------------------
 # Document Routes
