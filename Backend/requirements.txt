@@ -18,3 +18,4 @@ sqlalchemy
 Pillow 
 reportlab
 httpx
+azure-identity
