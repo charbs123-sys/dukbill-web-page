@@ -32,6 +32,7 @@ from External_APIs.xero_pdf_generation import *
 from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
 from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
 from cryptography.fernet import Fernet
+from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
 # ------------------------
 # Python Imports
 # ------------------------
@@ -623,6 +624,61 @@ async def gmail_callback(code: str, state: str):
         REDIRECT_URL + "?scan=started"
     )
 
+#
+# Outlook integration
+#
+
+@app.post("/outlook/scan")
+async def outlook_scan(user=Depends(get_current_user)):
+    claims, token = user
+
+    # Encode user token into 'state' to persist session across redirect
+    encoded_token = token.encode()
+    encrypted_message = Encryption_function.encrypt(encoded_token)
+
+    consent_url = get_outlook_auth_url(encrypted_message)
+    return {"consent_url": consent_url}
+
+
+@app.get("/outlook/callback")
+async def outlook_callback(code: str, state: str):
+    # 1. Decrypt state to get back the original user token
+    try:
+        decrypted_key = Encryption_function.decrypt(state)
+        jwt_key = decrypted_key.decode()
+        claims = verify_token(jwt_key) # Validate the user is still authenticated
+        if not claims:
+            raise Exception("Invalid token")
+    except Exception:
+         raise HTTPException(status_code=401, detail="Invalid or expired session state")
+
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+
+    # 2. Exchange Authorization Code for Microsoft Tokens
+    try:
+        tokens = exchange_outlook_code_for_tokens(code)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+
+    access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token") # Will be None if 'offline_access' scope is missing
+
+    # 3. Start Background Scan
+    threading.Thread(
+        target=run_outlook_scan, # You need to define this function similar to run_gmail_scan
+        args=(client["client_id"], user_obj["email"], access_token, refresh_token),
+        daemon=True,
+    ).start()
+   
+    # 4. Redirect user back to frontend
+    return RedirectResponse(
+        REDIRECT_URL + "?scan=started"
+    )
+
+
+
 # ------------------------
 # Basiq Integration
 # ------------------------
@@ -689,6 +745,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
     
     # Create verification request
     response = shufti_url(user_obj["email"], user_obj["user_id"])
+    print(response)
     if not response:
         raise HTTPException(status_code=500, detail="Failed to create verification")
     

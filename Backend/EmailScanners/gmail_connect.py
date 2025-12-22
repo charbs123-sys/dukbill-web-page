@@ -22,6 +22,9 @@ TOKENS_FILE = "tokens.json"
 SCOPES = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/script.external_request https://www.googleapis.com/auth/userinfo.email"
 USERINFO_V2 = "https://www.googleapis.com/oauth2/v2/userinfo"
 
+
+
+
 # ===== Token helpers =====
 def save_tokens(tokens: dict) -> None:
     with open(TOKENS_FILE, "w", encoding="utf-8") as f:
@@ -190,6 +193,8 @@ def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_t
     url = "https://z1c3olnck5.execute-api.ap-southeast-2.amazonaws.com/Prod/"
     post_batches_to_api(url, thread_ids, access_token, refresh_token, user_email, warnings, is_complete)
 
+
+
 # ===== OAuth redirect URL =====
 def get_google_auth_url(state):  # ← Add state parameter
     params = {
@@ -203,3 +208,5 @@ def get_google_auth_url(state):  # ← Add state parameter
         "state": state,  # ← Add this line
     }
     return f"{AUTH_URL}?{urlencode(params)}"
+
+
