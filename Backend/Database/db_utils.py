@@ -27,6 +27,8 @@ def get_unique_broker_id():
             if existing is None:
                 return candidate
 
+
+
 # ------------------------
 # Retrieve User/Client/Broker
 # ------------------------
@@ -69,11 +71,8 @@ def retrieve_client(user_id):
             return {
                 'client_id': result.client_id,
                 'user_id': result.user_id,
-                'broker_id': result.broker_id,
-                'broker_verify': result.broker_verify,
-                'brokerAccess': result.brokerAccess
             }
-        return None
+        return []
 
 def get_user_by_client_id(client_id):
     with Session(engine) as session:
@@ -93,6 +92,31 @@ def get_user_by_client_id(client_id):
                 'profile_complete': result.profile_complete
             }
         return None
+
+def get_client_broker_access_db(client_id, broker_id):
+    with Session(engine) as session:
+        stmt = select(ClientBroker).where(
+            ClientBroker.client_id == client_id,
+            ClientBroker.broker_id == broker_id
+        )
+        result = session.execute(stmt).scalar_one_or_none()
+        if result:
+            return result.brokerAccess
+        return None
+
+
+def get_client_brokers_db(client_id):
+    with Session(engine) as session:
+        stmt = select(ClientBroker).where(ClientBroker.client_id == client_id)
+        results = session.execute(stmt).scalars().all()
+        brokers = []
+        for result in results:
+            brokers.append({
+                'broker_id': result.broker_id,
+                'broker_verify': result.broker_verify,
+                'brokerAccess': result.brokerAccess
+            })
+        return brokers
 
 # ------------------------
 # Verify User/Client/Broker
@@ -122,9 +146,6 @@ def verify_client_by_id(client_id):
             return {
                 'client_id': result.client_id,
                 'user_id': result.user_id,
-                'broker_id': result.broker_id,
-                'broker_verify': result.broker_verify,
-                'brokerAccess': result.brokerAccess
             }
         return None
 
@@ -169,17 +190,28 @@ def add_user(auth0_id, email, picture, profileComplete=False):
         session.commit()
         return new_user.user_id
 
-def add_client(user_id, broker_id):
+def add_client(user_id):
     client_id = get_unique_client_id()
     with Session(engine) as session:
         new_client = Clients(
             client_id=client_id,
             user_id=user_id,
-            broker_id=broker_id
         )
         session.add(new_client)
         session.commit()
         return new_client.client_id
+
+def add_client_broker(client_id, broker_id):
+    with Session(engine) as session:
+        new_client_broker = ClientBroker(
+            client_id=client_id,
+            broker_id=broker_id,
+            broker_verify=False,
+            brokerAccess=False
+        )
+        session.add(new_client_broker)
+        session.commit()
+        return new_client_broker.broker_id
 
 def add_broker(user_id):
     broker_id = get_unique_broker_id()
@@ -232,12 +264,21 @@ def update_user_profile(auth0_id: str, profile_data: dict):
 # ------------------------
 # Client
 # ------------------------
-def toggle_broker_access_db(client_id):
+def toggle_broker_access_db(client_id: str, broker_id: str) -> bool | None:
     with Session(engine) as session:
-        client = session.get(Clients, client_id)
-        if client:
-            client.brokerAccess = not client.brokerAccess
-            session.commit()
+        cb = session.execute(
+            select(ClientBroker)
+            .where(ClientBroker.client_id == client_id)
+            .where(ClientBroker.broker_id == broker_id)
+        ).scalar_one_or_none()
+
+        if not cb:
+            return None
+
+        cb.brokerAccess = not cb.brokerAccess
+        session.commit()
+        session.refresh(cb)
+        return cb.brokerAccess
 
 def get_brokers_for_client(client_id: str):
     with Session(engine) as session:
@@ -246,11 +287,11 @@ def get_brokers_for_client(client_id: str):
                 Brokers.broker_id,
                 Users.name,
                 Users.picture,
-                Clients.brokerAccess
+                ClientBroker.brokerAccess
             )
-            .join(Clients, Brokers.broker_id == Clients.broker_id)
+            .join(ClientBroker, Brokers.broker_id == ClientBroker.broker_id)
             .join(Users, Brokers.user_id == Users.user_id)
-            .where(Clients.client_id == client_id)
+            .where(ClientBroker.client_id == client_id)
         )
 
         results = session.execute(stmt).all()
@@ -265,19 +306,36 @@ def get_brokers_for_client(client_id: str):
             })
 
         return brokers
-   
+
+def delete_client_broker_db(client_id: str, broker_id: str):
+    with Session(engine) as session:
+        stmt = delete(ClientBroker).where(
+            ClientBroker.client_id == client_id,
+            ClientBroker.broker_id == broker_id
+        )
+        session.execute(stmt)
+        session.commit()
+        return
+
+
 # ------------------------
 # Broker
 # ------------------------
 def get_clients_for_broker(broker_id):
     with Session(engine) as session:
-        stmt = select(
-            Clients.client_id,
-            Users.name,
-            Users.picture,
-            Clients.broker_verify,
-            Clients.brokerAccess
-        ).join(Users).where(Clients.broker_id == broker_id)
+        stmt = (
+            select(
+                ClientBroker.client_id,
+                Users.name,
+                Users.picture,
+                ClientBroker.broker_verify,
+                ClientBroker.brokerAccess,
+            )
+            .select_from(ClientBroker)
+            .join(Clients, Clients.client_id == ClientBroker.client_id)
+            .join(Users, Users.user_id == Clients.user_id)
+            .where(ClientBroker.broker_id == broker_id)
+        )
         
         results = session.execute(stmt).all()
         

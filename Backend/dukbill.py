@@ -219,8 +219,7 @@ async def get_emails(user=Depends(get_current_user)):
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
-    
-    return get_client_emails_dashboard(client["client_id"])
+    return get_client_emails_dashboard(client["client_id"]) if client else []
 
 @app.delete("/delete/email")
 async def delete_email(request: Request, user=Depends(get_current_user)):
@@ -266,9 +265,11 @@ async def get_client_documents(user=Depends(get_current_user)):
     if myob_verified_documents:
         headings.extend(myob_verified_documents)
     
+    
+
     return {
         "headings": headings, 
-        "BrokerAccess": client["brokerAccess"],
+        "BrokerAccess": get_client_broker_list(client["client_id"]),
         "loginEmail": user_obj["email"]
     }
 
@@ -308,24 +309,48 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     return documents
 
+@app.post("/add/broker")
+async def add_broker(broker_id: str, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    registered_broker_id = register_client_broker(client["client_id"], broker_id)
+    if not registered_broker_id:
+        raise HTTPException(status_code=400, detail="Invalid broker ID")
+    
+    return {"broker_id": registered_broker_id}
+
 @app.get("/get/brokers")
 async def get_brokers(user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
+    client = find_client(user_obj["user_id"])    
 
     return get_client_brokers(client["client_id"])
     
 @app.post("/broker/access")
-async def toggle_broker_access_route(user=Depends(get_current_user)):
+async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
     
-    toggle_broker_access(client["client_id"])
-    return {"BrokerAccess": not client["brokerAccess"]}
+    return {"BrokerAccess": toggle_broker_access(client["client_id"], broker_id)}
+
+@app.post("/client/broker/delete")
+async def delete_client_broker(broker_id: str, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    remove_client_broker(client["client_id"], broker_id)
+    return {"message": "Broker removed successfully"}
+
 
 # ------------------------
 # Broker Routes
@@ -367,7 +392,7 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
     
     return {
         "headings": headings, 
-        "BrokerAccess": client["brokerAccess"],
+        "BrokerAccess": get_client_broker_list(client["client_id"]),
         "loginEmail": client_user["email"]
     }
 
@@ -375,7 +400,8 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
 async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):
     claims, _ = user
     client = verify_client(client_id)
-    if not client["brokerAccess"]:
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
     
     category = request.get("category")
@@ -411,9 +437,10 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
     claims, _ = user
     client = verify_client(client_id)
-    if not client["brokerAccess"]:
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
-    
+
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
     
@@ -629,7 +656,8 @@ async def get_client_bank_transactions(user=Depends(get_current_user)):
 @app.get("/brokers/client/{client_id}/bank/transactions")
 async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
     client = verify_client(client_id)
-    if not client.get("brokerAccess"):
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
     client_user = get_user_from_client(client_id)
     basiq_id = client_user.get("basiq_id")
