@@ -624,6 +624,7 @@ async def gmail_callback(code: str, state: str):
         REDIRECT_URL + "?scan=started"
     )
 
+'''
 #
 # Outlook integration
 #
@@ -676,7 +677,7 @@ async def outlook_callback(code: str, state: str):
     return RedirectResponse(
         REDIRECT_URL + "?scan=started"
     )
-
+'''
 
 
 # ------------------------
