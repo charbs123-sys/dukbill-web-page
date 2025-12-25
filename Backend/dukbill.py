@@ -723,7 +723,7 @@ async def outlook_callback(code: str, state: str):
     )
 
 
-
+'''
 # ------------------------
 # Basiq Integration
 # ------------------------
@@ -769,7 +769,7 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
         return {"transactions": []}
     transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
     return {"transactions": transactions}
-
+'''
 # ------------------------
 # Shufti
 # ------------------------
