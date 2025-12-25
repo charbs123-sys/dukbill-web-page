@@ -90,6 +90,30 @@ class GoogleTokenRequest(BaseModel):
 class XeroAuthRequest(BaseModel):
     code: str
 
+#
+# Xero Config
+#
+
+expected_reports_xero = [
+    "xero_accounts_report.pdf",
+    "xero_bank_transfers_report.pdf",
+    "xero_credit_notes_report.pdf",
+    "xero_financial_reports.pdf",
+    "xero_invoices_report.pdf",
+    "xero_payments_report.pdf",
+    "xero_payroll_report.pdf",
+    "xero_transactions_report.pdf"
+]
+
+#myob config
+
+expected_reports_myob = [
+    "Broker_Payroll_Summary.pdf",
+    "Broker_Sales_Summary.pdf",
+    "Broker_Banking_Summary.pdf",
+    "Broker_Purchases_Summary.pdf"
+]
+
 # ------------------------
 # Dependencies
 # ------------------------
@@ -254,19 +278,12 @@ async def get_client_documents(user=Depends(get_current_user)):
     if user_obj["email"] not in email_addresses:
         emails.append({"email_address": user_obj["email"]})
     
+    #get emails, xero and myob docs
     headings = get_client_dashboard(client["client_id"], emails)
     verified_headings = get_client_verified_ids_dashboard(client["client_id"], [user_obj["email"]])
-    xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], [user_obj["email"]])
-    myob_verified_documents = get_myob_verified_documents_dashboard(client["client_id"], [user_obj["email"]])
 
     if verified_headings:
         headings.extend(verified_headings)
-    if xero_verified_documents:
-        headings.extend(xero_verified_documents)
-    if myob_verified_documents:
-        headings.extend(myob_verified_documents)
-    
-    
 
     return {
         "headings": headings, 
@@ -295,18 +312,9 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     if category in ["Driving License", "Id Card", "Passport"]:
         verified_docs = get_client_verified_ids_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(verified_docs)
-    
-    # Check if category is a Xero report type
-    if category in ["Accounts Report", "Bank Transfers Report", "Credit Notes Report", 
-                    "Financial Reports", "Invoices Report", "Payments Report", 
-                    "Payroll Report", "Transactions Report"]:
-        xero_docs = get_client_xero_documents(client["client_id"], [user_obj["email"]], category)
-        documents.extend(xero_docs)
-    
-    # Check if category is a MYOB report type
-    if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
-        myob_docs = get_client_myob_documents(client["client_id"], [user_obj["email"]], category)
-        documents.extend(myob_docs)
+
+    #retrieving xero/myob documents 
+    documents.extend(get_docs_general(client["client_id"], [user_obj["email"]], category))
 
     return documents
 
@@ -374,23 +382,17 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
 
     # Extract email addresses for comparison
     email_addresses = [e["email_address"] for e in emails]
-    
+
     # Add login email if not present
     if client_user["email"] not in email_addresses:
         emails.append({"email_address": client_user["email"]})
 
     headings = get_client_dashboard(client_id, emails)
     verified_headings = get_client_verified_ids_dashboard(client["client_id"], [client_user["email"]])
-    xero_verified_documents = get_xero_verified_documents_dashboard(client["client_id"], [client_user["email"]])
-    myob_verified_documents = get_myob_verified_documents_dashboard(client["client_id"], [client_user["email"]])
 
     if verified_headings:
         headings.extend(verified_headings)
-    if xero_verified_documents:
-        headings.extend(xero_verified_documents)
-    if myob_verified_documents:
-        headings.extend(myob_verified_documents)
-    
+
     return {
         "headings": headings, 
         "BrokerAccess": get_client_broker_list(client["client_id"]),
@@ -421,17 +423,14 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     if category in ["Driving License", "Id Card", "Passport"]:
         verified_docs = get_client_verified_ids_documents(client_id, [client_user["email"]], category)
         documents.extend(verified_docs)
-    
-    if category in ["Accounts Report", "Bank Transfers Report", "Credit Notes Report", 
-                    "Financial Reports", "Invoices Report", "Payments Report", 
-                    "Payroll Report", "Transactions Report"]:
-        xero_docs = get_client_xero_documents(client_id, [client_user["email"]], category)
-        documents.extend(xero_docs)
-    
-    if category in ["Payroll Summary", "Sales Summary", "Banking Summary", "Purchases Summary"]:
-        myob_docs = get_client_myob_documents(client_id, [client_user["email"]], category)
-        documents.extend(myob_docs)
-    
+
+    #retrieving xero/myob documents 
+    documents.extend(get_docs_general(client["client_id"], [client_user["email"]], category))
+
+    return documents
+
+
+
     return documents  # Return list directly, not wrapped in a dict
 
 @app.get("/brokers/client/{client_id}/documents/download")
@@ -484,6 +483,9 @@ async def edit_client_document_endpoint(
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if updates["id"].startswith("xero_") or updates["id"].startswith("Broker_"):
+        raise HTTPException(status_code=400, detail="Editing Xero or MYOB documents is not supported")
+
     hashed_email = updates.pop("hashed_email", None)
     if not hashed_email:
         raise HTTPException(status_code=400, detail="Missing hashed_email")
@@ -502,7 +504,6 @@ async def delete_client_document_endpoint(
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
     data = await request.json()
-    
     threadid = data.get("id")
     hashed_email = data.get("hashed_email")
     if not threadid or not hashed_email:
@@ -511,35 +512,15 @@ async def delete_client_document_endpoint(
     # Known identity document types
     identity_doc_types = ["driving_license", "id_card", "passport"]
     
-    # Known Xero report types
-    xero_report_types = [
-        "xero_accounts_report",
-        "xero_bank_transfers_report",
-        "xero_credit_notes_report",
-        "xero_financial_reports",
-        "xero_invoices_report",
-        "xero_payments_report",
-        "xero_payroll_report",
-        "xero_transactions_report"
-    ]
-    
-    # Known MYOB report types
-    myob_report_types = [
-        "Broker_Payroll_Summary",
-        "Broker_Sales_Summary",
-        "Broker_Banking_Summary",
-        "Broker_Purchases_Summary"
-    ]
-    
     # Check if it's a verified identity document by checking the id
     if threadid in identity_doc_types:
         delete_client_document_identity(threadid, hashed_email)
     # Check if it's a Xero report
-    elif threadid in xero_report_types:
-        delete_client_xero_report(threadid, hashed_email)
+    elif threadid.startswith("xero_"):
+        delete_docs_general(threadid, hashed_email, "xero_reports")
     # Check if it's a MYOB report
-    elif threadid in myob_report_types:
-        delete_client_myob_report(threadid, hashed_email)
+    elif threadid.startswith("Broker_"):
+        delete_docs_general(threadid, hashed_email, "myob_reports")
     else:
         delete_client_document(hashed_email, threadid)
     
@@ -1029,6 +1010,8 @@ async def callback_xero(code: str = "", state: str = ""):
     except Exception as e:
         result["pdf_error"] = str(e)
 
+    update_anonymized_json_general(hashed_email, "xero_reports", expected_reports_xero)
+
     return RedirectResponse(
         url=REDIRECT_URL,
         status_code=303
@@ -1157,6 +1140,8 @@ async def myob_callback_compilation(request: Request, background_tasks: Backgrou
         state,
         hashed_user_email
     )
+
+    update_anonymized_json_general(hashed_user_email, "myob_reports", expected_reports_myob)
 
     return RedirectResponse(url=REDIRECT_URL)
 

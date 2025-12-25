@@ -80,10 +80,10 @@ def set_cached_emails_json(hashed_email: str, documents: list, mark_dirty: bool 
         return False
 
 def get_or_load_emails_json(hashed_email: str, s3_path: str) -> list:
-    documents = get_cached_emails_json(hashed_email)
-    if documents is not None:
-        logging.info(f"✓ Cache HIT for {hashed_email}")
-        return documents
+    #documents = get_cached_emails_json(hashed_email)
+    #if documents is not None:
+    #    logging.info(f"✓ Cache HIT for {hashed_email}")
+    #    return documents
     
     logging.info(f"✗ Cache MISS for {hashed_email}, loading from S3...")
     from Database.S3_utils import get_json_file

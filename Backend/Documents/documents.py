@@ -18,6 +18,32 @@ import os
 def get_client_dashboard(client_id: str, emails: list) -> list:
     """
     Returns a structured dashboard for a client based on all emails.
+    
+    headings of the form
+
+    [
+        {
+            heading: "Income & Employment Documents",
+            categories: 
+            [
+                {
+                    "category_name": category_name,
+                    "cards": 
+                    [
+                        {
+                            "id": id
+                            "category_data": 
+                            {
+                                data1, data2, data3
+                            },
+                            "hashed_email": doc.get("hashed_email")
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+
     """
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -35,8 +61,10 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
             all_documents.extend(documents)
         except HTTPException:
             continue
-
+        
     categories_map = {}
+    xero_map = {}
+    myob_map = {}
     for doc in all_documents:
         category = doc.get("broker_document_category", "Uncategorized")
         for heading, cat_list in DOCUMENT_CATEGORIES.items():
@@ -47,10 +75,25 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
                     "hashed_email": doc.get("hashed_email"),
                 })
                 break
+        for xero_report in doc.get("xero_reports", []):
+            xero_map.setdefault(xero_report, []).append({
+                "id": xero_report,
+                "category_data": [],
+                "hashed_email": doc.get("hashed_email"),
+            })    
+        for myob_report in doc.get("myob_reports", []):
+            myob_map.setdefault(myob_report, []).append({
+                "id": myob_report,
+                "category_data": [],
+                "hashed_email": doc.get("hashed_email"),
+            })
+
 
     categories_present = set(doc.get("broker_document_category", "Uncategorized") for doc in all_documents)
-
+    
     headings = []
+    
+    #standard headings
     for heading, cat_list in DOCUMENT_CATEGORIES.items():
         categories = [
             {"category_name": cat, "cards": categories_map.get(cat, [])}
@@ -62,6 +105,38 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
             "heading": heading,
             "categories": categories,
             "missing_categories": missing
+        })
+
+    #xero headings
+    if xero_map:
+        xero_categories = [
+            {
+                "category_name": category_name,
+                "cards": cards
+            }
+            for category_name, cards in xero_map.items()
+        ]
+
+        headings.append({
+            "heading": "Xero Reports",
+            "categories": xero_categories,
+            "missing_categories": []
+        })
+
+    #myob headings
+    if myob_map:
+        myob_categories = [
+            {
+                "category_name": category_name,
+                "cards": cards
+            }
+            for category_name, cards in myob_map.items()
+        ]
+
+        headings.append({
+            "heading": "MYOB Reports",
+            "categories": myob_categories,
+            "missing_categories": []
         })
 
     return headings
@@ -278,102 +353,16 @@ def get_client_verified_ids_documents(client_id: str, emails: list, category: st
 # ------------------------
 # Xero Documents
 # ------------------------
-def get_xero_verified_documents_dashboard(client_id: str, emails: list) -> list:
-    """
-    Returns a structured dashboard for a client based on Xero reports.
-    """
-    if not verify_client_by_id(client_id):
-        raise HTTPException(status_code=403, detail="Invalid client")
-    
-    # Define expected Xero report types
-    expected_reports = [
-        "xero_accounts_report.pdf",
-        "xero_bank_transfers_report.pdf",
-        "xero_credit_notes_report.pdf",
-        "xero_financial_reports.pdf",
-        "xero_invoices_report.pdf",
-        "xero_payments_report.pdf",
-        "xero_payroll_report.pdf",
-        "xero_transactions_report.pdf"
-    ]
-    
-    all_documents = []
-    
-    for email_entry in emails:
-        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
-        hashed_email = hash_email(email)
-        
-        try:
-            from Database.S3_utils import list_s3_files
-            xero_reports_path = "/xero_reports"
-            files = list_s3_files(hashed_email, xero_reports_path)
-            
-            # Filter for PDF files only
-            pdf_files = [f for f in files if f.endswith('.pdf')]
-            
-            # Group by report type
-            doc_type_map = {}
-            for filename in pdf_files:
-                # Extract just the filename (remove path if present)
-                basename = filename.split('/')[-1]
-                
-                # Check if it matches any expected report name
-                if basename in expected_reports:
-                    # Extract report type (keep full name without .pdf)
-                    doc_type = basename.replace(".pdf", "")
-                    
-                    if doc_type not in doc_type_map:
-                        doc_type_map[doc_type] = []
-                    doc_type_map[doc_type].append(filename)
-            
-            # Create an entry for each document type
-            for doc_type, file_list in doc_type_map.items():
-                all_documents.append({
-                    "hashed_email": hashed_email,
-                    "doc_type": doc_type,
-                    "files": file_list
-                })
-        except Exception:
-            continue
-    
-    # Group by document type for categories
-    categories_map = {}
-    for doc in all_documents:
-        doc_type = doc.get("doc_type")
-        # Format: "xero_accounts_report" -> "Accounts Report"
-        formatted_type = doc_type.replace("xero_", "").replace("_", " ").title()
-        
-        if formatted_type not in categories_map:
-            categories_map[formatted_type] = []
-        
-        categories_map[formatted_type].append({
-            "id": doc_type,
-            "category_data": {
-                "Xero Type": formatted_type
-            },
-            "hashed_email": doc.get("hashed_email"),
-            "files": doc.get("files", []),
-            "file_count": len(doc.get("files", []))
-        })
-    
-    headings = []
-    if categories_map:
-        categories = [
-            {
-                "category_name": category_name,
-                "cards": cards
-            }
-            for category_name, cards in categories_map.items()
-        ]
-        
-        headings.append({
-            "heading": "Xero Reports",
-            "categories": categories,
-            "missing_categories": []
-        })
-    
-    return headings
+def update_anonymized_json_general(hashed_email: str, parent_header: str, sibling_header: list[str]) -> None:
 
+    # Implementation for updating anonymized JSON
+    ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents.append({parent_header: sibling_header})
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+    return True
+
+'''
 def get_client_xero_documents(client_id: str, emails: list, category: str) -> list:
     """
     Returns all Xero report documents for a client across multiple emails filtered by category.
@@ -388,21 +377,24 @@ def get_client_xero_documents(client_id: str, emails: list, category: str) -> li
 
     all_xero_docs = []
     
+    
     # Convert category to the file name format (e.g., "Accounts Report" -> "xero_accounts_report.pdf")
-    category_to_filename = {
-        "Accounts Report": "xero_accounts_report.pdf",
-        "Bank Transfers Report": "xero_bank_transfers_report.pdf",
-        "Credit Notes Report": "xero_credit_notes_report.pdf",
-        "Financial Reports": "xero_financial_reports.pdf",
-        "Invoices Report": "xero_invoices_report.pdf",
-        "Payments Report": "xero_payments_report.pdf",
-        "Payroll Report": "xero_payroll_report.pdf",
-        "Transactions Report": "xero_transactions_report.pdf"
+    filename_to_category = {
+        "xero_accounts_report.pdf": "Accounts Report",
+        "xero_bank_transfers_report.pdf": "Bank Transfers Report",
+        "xero_credit_notes_report.pdf": "Credit Notes Report",
+        "xero_financial_reports.pdf": "Financial Reports",
+        "xero_invoices_report.pdf": "Invoices Report",
+        "xero_payments_report.pdf": "Payments Report",
+        "xero_payroll_report.pdf": "Payroll Report",
+        "xero_transactions_report.pdf": "Transactions Report"
     }
+    category_name = filename_to_category.get(category, "Not Found")
     
     # Get the filename for the requested category
-    report_filename = category_to_filename.get(category)
+    #report_filename = category_to_filename.get(category)
     
+    report_filename = category
     # If category is not a Xero report type, return empty list
     if not report_filename:
         return []
@@ -434,7 +426,7 @@ def get_client_xero_documents(client_id: str, emails: list, category: str) -> li
                 "id": f"{hashed_email}_{report_filename.replace('.pdf', '')}",  # Unique ID per report
                 "category": "Xero Reports",
                 "category_data": {
-                    "Xero Type": category  # preserve the previous company/category value
+                    "Xero Type": category_name  # preserve the previous company/category value
                 },
                 "url": urls,
                 "hashed_email": hashed_email,
@@ -445,10 +437,11 @@ def get_client_xero_documents(client_id: str, emails: list, category: str) -> li
             continue
 
     return all_xero_docs
-
+'''
 # ------------------------
 # MYOB Documents
 # ------------------------
+'''
 def get_myob_verified_documents_dashboard(client_id: str, emails: list) -> list:
     """
     Returns a structured dashboard for a client based on MYOB reports.
@@ -541,7 +534,85 @@ def get_myob_verified_documents_dashboard(client_id: str, emails: list) -> list:
         })
     
     return headings
+'''
 
+def get_docs_general(client_id: str, emails: list, category: str) -> list:
+    """
+    General dispatcher to get documents based on category.
+    """
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+
+    docs = []
+    
+    if category.startswith("Broker_"):
+        prefix = "myob_reports"
+        category_label = "MYOB Reports"
+        category_to_filename = {
+            "Broker_Payroll_Summary.pdf": "Payroll Summary",
+            "Broker_Sales_Summary.pdf": "Sales Summary",
+            "Broker_Banking_Summary.pdf": "Banking Summary",
+            "Broker_Purchases_Summary.pdf": "Purchases Summary",
+        }
+    elif category.startswith("xero_"):
+        prefix = "xero_reports"
+        category_label = "Xero Reports"
+        category_to_filename = {
+            "xero_accounts_report.pdf": "Accounts Report",
+            "xero_bank_transfers_report.pdf": "Bank Transfers Report",
+            "xero_credit_notes_report.pdf": "Credit Notes Report",
+            "xero_financial_reports.pdf": "Financial Reports",
+            "xero_invoices_report.pdf": "Invoices Report",
+            "xero_payments_report.pdf": "Payments Report",
+            "xero_payroll_report.pdf": "Payroll Report",
+            "xero_transactions_report.pdf": "Transactions Report",
+        }
+    else:
+        return []
+    # Get the filename for the requested category
+    doc_category_name = category_to_filename.get(category)
+    # If category is not a MYOB report type, return empty list
+    if not doc_category_name:
+        return []
+
+    for email_entry in emails:
+        email = email_entry["email_address"] if isinstance(email_entry, dict) else email_entry
+        hashed_email = hash_email(email)
+
+        try:
+            s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=hashed_email + '/' + prefix)
+            files = s3_objects.get("Contents", [])
+
+            pdf_keys = [obj["Key"] for obj in files if obj["Key"].endswith('.pdf')]
+            # Filter PDFs by the requested document type
+            doc_type_keys = []
+            for key in pdf_keys:
+                filename = key.split("/")[-1]
+                # Check if filename matches the requested doc_filename
+                if filename == f"{category}":
+                    doc_type_keys.append(key)
+            
+            # Only create entry if matching files found
+            if doc_type_keys:
+                urls = [get_cloudfront_url(k) for k in doc_type_keys]
+                            
+            docs.append({
+                "id": f"{hashed_email}_{category}",  # Unique ID per doc type
+                "category": category_label,
+                "category_data": {
+                    category_label: doc_category_name  # preserve the previous company/category value
+                },
+                "url": urls,
+                "hashed_email": hashed_email,
+            })
+        
+        except Exception as e:
+            logging.error(f"Error fetching MYOB reports for {hashed_email}: {e}")
+            continue
+
+    return docs
+
+'''
 def get_client_myob_documents(client_id: str, emails: list, category: str) -> list:
     """
     Returns all MYOB report documents for a client across multiple emails filtered by category.
@@ -558,17 +629,17 @@ def get_client_myob_documents(client_id: str, emails: list, category: str) -> li
     
     # Convert category to the file name format (e.g., "Payroll Summary" -> "Broker_Payroll_Summary")
     category_to_filename = {
-        "Payroll Summary": "Broker_Payroll_Summary",
-        "Sales Summary": "Broker_Sales_Summary",
-        "Banking Summary": "Broker_Banking_Summary",
-        "Purchases Summary": "Broker_Purchases_Summary"
+        "Broker_Payroll_Summary.pdf": "Payroll Summary",
+        "Broker_Sales_Summary.pdf": "Sales Summary",
+        "Broker_Banking_Summary.pdf": "Banking Summary",
+        "Broker_Purchases_Summary.pdf": "Purchases Summary"
     }
     
     # Get the filename for the requested category
-    doc_filename = category_to_filename.get(category)
+    doc_category_name = category_to_filename.get(category)
     
     # If category is not a MYOB report type, return empty list
-    if not doc_filename:
+    if not doc_category_name:
         return []
 
     for email_entry in emails:
@@ -587,7 +658,7 @@ def get_client_myob_documents(client_id: str, emails: list, category: str) -> li
             for key in pdf_keys:
                 filename = key.split("/")[-1]
                 # Check if filename matches the requested doc_filename
-                if filename == f"{doc_filename}.pdf":
+                if filename == f"{category}":
                     doc_type_keys.append(key)
             
             # Only create entry if matching files found
@@ -595,10 +666,10 @@ def get_client_myob_documents(client_id: str, emails: list, category: str) -> li
                 urls = [get_cloudfront_url(k) for k in doc_type_keys]
                             
             all_myob_docs.append({
-                "id": f"{hashed_email}_{doc_filename}",  # Unique ID per doc type
+                "id": f"{hashed_email}_{category}",  # Unique ID per doc type
                 "category": "MYOB Reports",
                 "category_data": {
-                    "MYOB Reports": category  # preserve the previous company/category value
+                    "MYOB Reports": doc_category_name  # preserve the previous company/category value
                 },
                 "url": urls,
                 "hashed_email": hashed_email,
@@ -609,7 +680,7 @@ def get_client_myob_documents(client_id: str, emails: list, category: str) -> li
             continue
 
     return all_myob_docs
-
+'''
 # ------------------------
 # Upload Documents
 # ------------------------
@@ -789,55 +860,40 @@ def delete_client_document_identity(doc_name: str, hashed_email: str):
         logging.error(f"Error deleting identity documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete identity documents")
 
-def delete_client_xero_report(report_name: str, hashed_email: str):
+#deleting documents for myob and xero, eventually any document type
+def delete_docs_general(report_name: str, hashed_email: str, report_type: str):
     """
-    Delete Xero report document from S3.
+    Delete a general document from S3.
     
     Args:
-        report_name: The report name (e.g., "xero_accounts_report", "xero_invoices_report")
+        report_name: The name of the document to delete
         hashed_email: The hashed email identifier
     """
     try:
         # Construct the S3 key
-        report_key = f"{hashed_email}/xero_reports/{report_name}.pdf"
+        anonymized_key = f"/broker_anonymized/emails_anonymized.json"
+        report_key = f"{hashed_email}/{report_type}/{report_name}"
         
         # Delete the file
         try:
             s3.delete_object(Bucket=bucket_name, Key=report_key)
             logging.info(f"✓ Deleted {report_key}")
-            return True
         except Exception as e:
             logging.error(f"Could not delete {report_key}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete Xero report: {e}")
-            
-    except Exception as e:
-        logging.error(f"Error deleting Xero report: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete Xero report")
+            raise HTTPException(status_code=500, detail=f"Failed to delete document: {e}")
+    
+        #delete from anonymized json
+        documents = get_or_load_emails_json(hashed_email, anonymized_key)
+        for doc in documents:
+            reports = doc.get(report_type, [])
+            if report_name in reports:
+                reports.remove(report_name)
+                doc[report_type] = reports
+        save_json_file(hashed_email, anonymized_key, documents)
 
-def delete_client_myob_report(report_name: str, hashed_email: str):
-    """
-    Delete MYOB report document from S3.
-    
-    Args:
-        report_name: The report name (e.g., "Broker_Payroll_Summary", "Broker_Sales_Summary")
-        hashed_email: The hashed email identifier
-    """
-    try:
-        # Construct the S3 key
-        report_key = f"{hashed_email}/myob_reports/{report_name}.pdf"
-        
-        # Delete the file
-        try:
-            s3.delete_object(Bucket=bucket_name, Key=report_key)
-            logging.info(f"✓ Deleted {report_key}")
-            return True
-        except Exception as e:
-            logging.error(f"Could not delete {report_key}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete MYOB report: {e}")
-            
     except Exception as e:
-        logging.error(f"Error deleting MYOB report: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete MYOB report")
+        logging.error(f"Error deleting document: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete document")
 
 # ------------------------
 # Move Documents
