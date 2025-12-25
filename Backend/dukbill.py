@@ -318,6 +318,24 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     return documents
 
+@app.post("/clients/remove/comment")
+async def remove_client_document_comment(request: dict, user=Depends(get_current_user)):
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    category = request.get("category")
+    hashed_user_email = request.get("hashed_email")
+    
+    if category.startswith("xero_"):
+        remove_comment_docs_general(client["client_id"], hashed_user_email, category, "xero_reports")
+    elif category.startswith("Broker_"):
+        remove_comment_docs_general(client["client_id"], hashed_user_email, category, "myob_reports")
+    else:
+        remove_comment_client_document(client["client_id"], hashed_user_email, category)
+    
+    return {"message": "Comment removed successfully"}
+
 @app.post("/add/broker")
 async def add_broker(broker_id: str, user=Depends(get_current_user)):
     claims, _ = user
@@ -429,10 +447,6 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
 
     return documents
 
-
-
-    return documents  # Return list directly, not wrapped in a dict
-
 @app.get("/brokers/client/{client_id}/documents/download")
 async def download_client_documents(client_id: int, user=Depends(get_current_user)):
     claims, _ = user
@@ -468,6 +482,51 @@ async def verify_client_documents(client_id: int, user=Depends(get_current_user)
     broker_verify = toggle_client_verification(client_id, broker["broker_id"])
     #client = verify_client(client_id)
     return {"broker_verify": broker_verify}
+
+@app.post("/brokers/add_comment")
+async def add_document_comment(client_id: int, request: dict, user=Depends(get_current_user)):
+    claims, _ = user
+    client = verify_client(client_id)
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
+        return {"error": "Access denied"}
+    
+    category = request.get("category")
+    client_user = get_user_from_client(client_id)
+    emails = get_client_emails(client_id)
+    hashed_user_email = request.get("hashed_email")
+    
+    if category.startswith("xero_"):
+        add_comment_docs_general(client_id, hashed_user_email, category, request.get("comment", ""), "xero_reports")
+    elif category.startswith("Broker_"):
+        add_comment_docs_general(client_id, hashed_user_email, category, request.get("comment", ""), "myob_reports")
+    else:
+        add_comment_client_document(client_id, hashed_user_email, category, request.get("comment", ""))
+    
+    return {"message": "Comment added successfully"}
+
+@app.post("/brokers/remove_comment")
+async def remove_document_comment(client_id: int, request: dict, user=Depends(get_current_user)):
+    claims, _ = user
+    client = verify_client(client_id)
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
+        return {"error": "Access denied"}
+    
+    category = request.get("category")
+    client_user = get_user_from_client(client_id)
+    emails = get_client_emails(client_id)
+    hashed_user_email = request.get("hashed_email")
+    
+    if category.startswith("xero_"):
+        remove_comment_docs_general(client_id, hashed_user_email, category, "xero_reports")
+    elif category.startswith("Broker_"):
+        remove_comment_docs_general(client_id, hashed_user_email, category, "myob_reports")
+    else:
+        remove_comment_client_document(client_id, hashed_user_email, category)
+    
+    return {"message": "Comment removed successfully"}
+
 
 # ------------------------
 # Document Routes
@@ -828,11 +887,11 @@ async def xero_signin(req: XeroAuthRequest):
 
 @app.get("/connect/xero")
 async def connect_xero(user=Depends(get_current_user)):
+    #need to deny multiple connections for now
     """Initiate Xero OAuth flow"""
     claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    print(user_obj)
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
     
