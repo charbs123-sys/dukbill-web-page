@@ -336,6 +336,87 @@ def get_bank_transfers(tenant_id: str):
     """Fetch bank transfers (fund movements between accounts)"""
     return fetch_xero_data_paginated("BankTransfers", "BankTransfers", tenant_id)
 
+def generate_xero_preview(all_data: dict) -> dict:
+    """Generate a structured preview of Xero data"""
+    preview = {
+        "settings": {
+            "accounts": (all_data["data"].get("accounts") or [None])[0],
+            "accounts_total": len(all_data["data"].get("accounts", [])),
+            "accounts_list": all_data["data"].get("accounts", []),
+
+            "tax_rates": (all_data["data"].get("tax_rates") or [None])[0],
+            "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
+            "tax_rates_list": all_data["data"].get("tax_rates", []),
+
+            "tracking_categories": (all_data["data"].get("tracking_categories") or [None])[0],
+            "tracking_categories_total": len(all_data["data"].get("tracking_categories", [])),
+            "tracking_categories_list": all_data["data"].get("tracking_categories", []),
+        },
+        "transactions": {
+            "bank_transactions": (all_data["data"].get("bank_transactions") or [None])[0],
+            "bank_transactions_total": len(all_data["data"].get("bank_transactions", [])),
+            "bank_transactions_list": all_data["data"].get("bank_transactions", []),
+
+            "payments": (all_data["data"].get("payments") or [None])[0],
+            "payments_total": len(all_data["data"].get("payments", [])),
+            "payments_list": all_data["data"].get("payments", []),
+
+            "credit_notes": (all_data["data"].get("credit_notes") or [None])[0],
+            "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
+            "credit_notes_list": all_data["data"].get("credit_notes", []),
+
+            "manual_journals": (all_data["data"].get("manual_journals") or [None])[0],
+            "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
+            "manual_journals_list": all_data["data"].get("manual_journals", []),
+
+            "overpayments": (all_data["data"].get("overpayments") or [None])[0],
+            "overpayments_total": len(all_data["data"].get("overpayments", [])),
+            "overpayments_list": all_data["data"].get("overpayments", []),
+
+            "prepayments": (all_data["data"].get("prepayments") or [None])[0],
+            "prepayments_total": len(all_data["data"].get("prepayments", [])),
+            "prepayments_list": all_data["data"].get("prepayments", []),
+
+            "invoices": (all_data["data"].get("invoices") or [None])[0],
+            "invoices_total": len(all_data["data"].get("invoices", [])),
+            "invoices_list": all_data["data"].get("invoices", []),
+
+            "bank_transfers": (all_data["data"].get("bank_transfers") or [None])[0],
+            "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
+            "bank_transfers_list": all_data["data"].get("bank_transfers", []),
+        },
+        "payroll": {
+            "employees": (all_data["data"].get("employees") or [None])[0],
+            "employees_total": len(all_data["data"].get("employees", [])),
+            "employees_list": all_data["data"].get("employees", []),
+
+            "payruns": (all_data["data"].get("payruns") or [None])[0],
+            "payruns_total": len(all_data["data"].get("payruns", [])),
+            "payruns_list": all_data["data"].get("payruns", []),
+
+            "payslips": (all_data["data"].get("payslips") or [None])[0],
+            "payslips_total": len(all_data["data"].get("payslips", [])),
+            "payslips_list": all_data["data"].get("payslips", []),
+        },
+        "reports": {
+            "profit_loss": all_data["data"].get("profit_loss"),
+            "balance_sheet": all_data["data"].get("balance_sheet"),
+        }
+    }
+    return preview
+
+def generate_all_reports_xero(result: dict, hashed_email: str) -> list:
+    """Generate all PDF reports for Xero data and upload to S3"""
+    s3_keys = []
+    s3_keys.append(generate_accounts_report(result, "xero_accounts_report.pdf", hashed_email))
+    s3_keys.append(generate_transactions_report(result, "xero_transactions_report.pdf", hashed_email))
+    s3_keys.append(generate_payments_report(result, "xero_payments_report.pdf", hashed_email))
+    s3_keys.append(generate_credit_notes_report(result, "xero_credit_notes_report.pdf", hashed_email))
+    s3_keys.append(generate_payroll_report(result, "xero_payroll_report.pdf", hashed_email))
+    s3_keys.append(generate_invoices_report(result, "xero_invoices_report.pdf", hashed_email))
+    s3_keys.append(generate_bank_transfers_report(result, "xero_bank_transfers_report.pdf", hashed_email))
+    s3_keys.append(generate_reports_summary(result, "xero_financial_reports.pdf", hashed_email))
+    return s3_keys
 
 # ============================================================================
 # CONTACTS ENDPOINT (accounting.contacts.read)

@@ -99,6 +99,9 @@ def retrieve_client(user_id: str) -> dict:
         return []
 
 def get_user_by_client_id(client_id):
+    '''
+    From clientid extract user information
+    '''
     with Session(engine) as session:
         stmt = select(Users).join(Clients).where(Clients.client_id == client_id)
         result = session.execute(stmt).scalar_one_or_none()
@@ -410,7 +413,15 @@ def delete_client_broker_db(client_id: str, broker_id: str) -> None:
 # ------------------------
 # Broker
 # ------------------------
-def get_clients_for_broker(broker_id):
+def get_clients_for_broker(broker_id: str) -> list:
+    '''
+    Fetch all clients related to a broker
+
+    broker_id (str): The broker ID.
+
+    Returns:
+        list: List of clients associated with the broker
+    '''
     with Session(engine) as session:
         stmt = (
             select(
@@ -441,6 +452,15 @@ def get_clients_for_broker(broker_id):
         return clients
 
 def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
+    '''
+    Toggle the verification status of a client document for a specific broker.
+
+    client_id (str): The client ID.
+    broker_id (str): The broker ID.
+
+    Returns:
+        bool | None: The updated verification status or None if not found
+    '''
     with Session(engine) as session:
         cb = session.execute(
             select(ClientBroker)

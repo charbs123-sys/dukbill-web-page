@@ -1,14 +1,23 @@
 import urllib
 import os
 import requests
+from External_APIs.myob_pdf_generation import (
+    generate_payroll_pdf,
+    generate_sales_pdf,
+    generate_banking_pdf,
+    generate_purchases_pdf
+)
+from Database.S3_utils import upload_myob_pdf_to_s3
 
 API_KEY = os.environ.get("MYOB_API_KEY")
 API_SECRET = os.environ.get("MYOB_SECRET")
 MYOB_REDIRECT_URI = os.environ.get("MYOB_REDIRECT_URL", "http://localhost:8080/myob/callback")
 SCOPE = "sme-banking sme-purchases sme-sales sme-payroll sme-company-file sme-contacts-customer sme-contacts-supplier"
 
-def build_auth_url(state):
-    """Step 2: Build the authorization URL"""
+def build_auth_url(state: str) -> str:
+    '''
+    Generate the url to redirect user to MYOB OAuth consent screen
+    '''
     params = {
         'client_id': API_KEY,
         'redirect_uri': MYOB_REDIRECT_URI,
@@ -20,9 +29,8 @@ def build_auth_url(state):
     base_url = "https://secure.myob.com/oauth2/account/authorize"
     return f"{base_url}?{urllib.parse.urlencode(params)}"
 
-def get_access_token_myob(code):
-    """Step 4: Exchange authorization code for access token"""
-    import requests
+def get_access_token_myob(code: str) -> dict:
+    """Exchange authorization code for access token"""
     
     token_url = "https://secure.myob.com/oauth2/v1/authorize"
     
@@ -134,3 +142,41 @@ def retrieve_endpoints_myob(access_token, business_id):
         else:
             print(f"✗ No data returned for {endpoint}")
     return all_results
+
+
+def process_myob_data(code: str, business_id: str, state: str, hashed_user_email: str):
+    '''
+    Process MYOB data after OAuth callback
+
+    code (str): The authorization code from MYOB OAuth.
+    business_id (str): The business/company file ID.
+    state (str): The state parameter to verify the request.
+    hashed_user_email (str): The hashed email identifier for S3 storage.
+
+    Returns:
+        None
+    '''
+    try:
+        tokens = get_access_token_myob(code)
+        
+        if not tokens:
+            return
+        
+        access_token = tokens.get("access_token")
+        # refresh_token = tokens.get("refresh_token")
+        
+        myob_data = retrieve_endpoints_myob(access_token, business_id)
+        
+        payroll_pdf = generate_payroll_pdf(myob_data)
+        sales_pdf = generate_sales_pdf(myob_data)
+        banking_pdf = generate_banking_pdf(myob_data)
+        purchases_pdf = generate_purchases_pdf(myob_data)
+        
+        # Upload to S3 -> this should probably be a general function
+        upload_myob_pdf_to_s3(payroll_pdf, hashed_user_email, "Broker_Payroll_Summary.pdf")
+        upload_myob_pdf_to_s3(sales_pdf, hashed_user_email, "Broker_Sales_Summary.pdf")
+        upload_myob_pdf_to_s3(banking_pdf, hashed_user_email, "Broker_Banking_Summary.pdf")
+        upload_myob_pdf_to_s3(purchases_pdf, hashed_user_email, "Broker_Purchases_Summary.pdf")
+        
+    except Exception as e:
+        print(f"✗ Error processing MYOB data: {e}")

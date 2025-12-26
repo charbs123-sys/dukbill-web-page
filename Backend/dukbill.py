@@ -27,6 +27,7 @@ from Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stre
 from shufti import shufti_url
 from helpers.id_helpers import *
 from helpers.xero_helpers import *
+from helpers.myob_helper import *
 from External_APIs.xero_pdf_generation import *
 from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
 from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
@@ -528,7 +529,15 @@ async def delete_client_broker(broker_id: str, user=Depends(get_current_user)) -
 # Broker Routes
 # ------------------------
 @app.get("/brokers/client/list")
-async def get_client_list(user=Depends(get_current_user)):
+async def get_client_list(user=Depends(get_current_user)) -> dict:
+    '''
+    Fetch all clients related to a broker
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: List of clients associated with the broker {clients: [...]}
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -537,10 +546,24 @@ async def get_client_list(user=Depends(get_current_user)):
     return {"clients": clients}
 
 @app.get("/brokers/client/{client_id}/dashboard")
-async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_user)):
+async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_user)) -> dict:
+    '''
+    Get the client dashboard view for brokers
+
+    client_id (int): The client ID to fetch the dashboard for.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Client dashboard information {headings: [...], BrokerAccess: [...], loginEmail: ...}
+    '''
     claims, _ = user
     client = verify_client(client_id)
+    if not client:
+        return {"error": "Access denied"}
     client_user = get_user_from_client(client_id)
+    is_broker_access = get_client_broker_list(client["client_id"])
+    if not is_broker_access[0].get("brokerAccess", True):
+        return {"error": "Access denied"}
     emails = get_client_emails(client_id)
 
     # Extract email addresses for comparison
@@ -558,12 +581,22 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
 
     return {
         "headings": headings, 
-        "BrokerAccess": get_client_broker_list(client["client_id"]),
+        "BrokerAccess": is_broker_access,
         "loginEmail": client_user["email"]
     }
 
 @app.post("/brokers/client/{client_id}/category/documents")
 async def get_category_documents_broker(client_id: int, request: dict, user=Depends(get_current_user)):
+    '''
+    Fetch the documents of an individual category on client_id for brokers to view
+
+    client_id (int): The client ID to fetch documents for.
+    request (dict) -> {category: category_name}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        list: List of documents in the specified category
+    '''
     claims, _ = user
     client = verify_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
@@ -593,7 +626,16 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
     return documents
 
 @app.get("/brokers/client/{client_id}/documents/download")
-async def download_client_documents(client_id: int, user=Depends(get_current_user)):
+async def download_client_documents(client_id: int, user=Depends(get_current_user)) -> StreamingResponse:
+    '''
+    Allow broker to download all client documents as a zip file
+
+    client_id (int): The client ID to download documents for.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        StreamingResponse: The streaming response containing the zip file.
+    '''
     claims, _ = user
     client = verify_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
@@ -610,26 +652,37 @@ async def download_client_documents(client_id: int, user=Depends(get_current_use
     if client_user["email"] not in email_addresses:
         email_addresses.append(client_user["email"])
 
-    #email_to_download = emails[0]["email_address"] if isinstance(emails[0], dict) else emails[0]
-
     result = _invoke_zip_lambda_for(email_addresses)
     zip_key = result["zip_key"]
     filename = f"client_{client_id}_documents.zip"
     return _stream_s3_zip(zip_key, filename)
 
 @app.post("/brokers/client/{client_id}/verify")
-async def verify_client_documents(client_id: int, user=Depends(get_current_user)):
+async def verify_client_documents(client_id: int, user=Depends(get_current_user)) -> dict:
+    '''
+    Allow brokers to toggle documents as verified or unverified
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
     
     broker_verify = toggle_client_verification(client_id, broker["broker_id"])
-    #client = verify_client(client_id)
     return {"broker_verify": broker_verify}
 
+#see if we can get threadid as well if it exists on a file
 @app.post("/brokers/add_comment")
-async def add_document_comment(client_id: int, request: dict, user=Depends(get_current_user)):
+async def add_document_comment(client_id: int, request: dict, user=Depends(get_current_user)) -> dict:
+    '''
+    Allow brokers to add comments to client documents
+
+    client_id (int): The client ID to add comment for.
+    request (dict) -> {category: category_name, comment: comment_text, hashed_email: hashed_email}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful addition
+    '''
     claims, _ = user
     client = verify_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
@@ -651,7 +704,17 @@ async def add_document_comment(client_id: int, request: dict, user=Depends(get_c
     return {"message": "Comment added successfully"}
 
 @app.post("/brokers/remove_comment")
-async def remove_document_comment(client_id: int, request: dict, user=Depends(get_current_user)):
+async def remove_document_comment(client_id: int, request: dict, user=Depends(get_current_user)) -> dict:
+    '''
+    Allow brokers to remove comments from client documents
+    
+    client_id (int): The client ID to remove comment for.
+    request (dict) -> {category: category_name, hashed_email: hashed_email}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful removal
+    '''
     claims, _ = user
     client = verify_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
@@ -680,7 +743,16 @@ async def remove_document_comment(client_id: int, request: dict, user=Depends(ge
 async def edit_client_document_endpoint(
     updates: dict = Body(...),
     user=Depends(get_current_user)
-):
+) -> dict:
+    '''
+    Allow clients to edit document metadata
+
+    updates (dict): The updates to apply to the document.
+    user (tuple): The current user information from the dependency.
+    
+    Returns:
+        dict: Success message on succesful edit
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -701,7 +773,16 @@ async def edit_client_document_endpoint(
 async def delete_client_document_endpoint(
     request: Request,
     user=Depends(get_current_user)
-):
+) -> dict:
+    '''
+    Allow clients to delete documents
+
+    request (Request): The request object containing the document ID and hashed email. {id: document_id, hashed_email: hashed_email}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful deletion
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -713,6 +794,7 @@ async def delete_client_document_endpoint(
     if not threadid or not hashed_email:
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
     
+    #will delete this later
     # Known identity document types
     identity_doc_types = ["driving_license", "id_card", "passport"]
     
@@ -736,7 +818,18 @@ async def upload_document_card(
     category_data: str = Form(...),
     file: UploadFile = File(...),
     user=Depends(get_current_user),
-):
+) -> dict:
+    '''
+    Allow upload logic for client documents
+
+    category (str): The category of the document.
+    category_data (str): The JSON string containing additional category data.
+    file (UploadFile): The file to upload.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message with uploaded document information {status: "success", uploaded_document: {...}}
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -760,7 +853,18 @@ async def download_document(
     category: str,
     hashed_email: str,
     user=Depends(get_current_user)
-):
+) -> dict:
+    '''
+    Download any document by generating pre-signed URLs
+
+    id (str): The document ID.
+    category (str): The document category.
+    hashed_email (str): The hashed email associated with the document.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Pre-signed URLs for downloading the document {urls: [...]}
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -777,7 +881,15 @@ async def download_document(
 # Gmail Integration
 # ------------------------
 @app.post("/gmail/scan")
-async def gmail_scan(user=Depends(get_current_user)):
+async def gmail_scan(user=Depends(get_current_user)) -> dict:
+    '''
+    Initiate Gmail scanning process
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Consent URL for Gmail authorization {consent_url: ...}
+    '''
     claims, token = user
 
     encoded_token = token.encode()
@@ -787,8 +899,16 @@ async def gmail_scan(user=Depends(get_current_user)):
     return {"consent_url": consent_url}
 
 @app.get("/gmail/callback")
-async def gmail_callback(code: str, state: str):
+async def gmail_callback(code: str, state: str) -> RedirectResponse:
+    '''
+    Parse the gmail callback and send to lambda function for processing
 
+    code (str): The authorization code from Gmail.
+    state (str): The encrypted state containing the user token.
+
+    Returns:
+        RedirectResponse: Redirects to the frontend with scan started indication.
+    '''
     decrypted_key = Encryption_function.decrypt(state)
     jwt_key = decrypted_key.decode()
 
@@ -1006,24 +1126,30 @@ async def notify_callback(request: Request):
 # Xero Routes
 # ------------------------
 @app.post("/api/xero-signup")
-async def xero_signup(req: XeroAuthRequest):
+async def xero_signup(req: XeroAuthRequest) -> dict:
     """
-    Exchange authorization code for tokens and get user info
-    Similar to your Google signup flow
+    Xero signup workflow
+
+    req (XeroAuthRequest): The request body containing the authorization code.
+
+    Returns:
+        dict: Success message on successful registration
     """
     user_data = await verify_xero_auth(req.code)
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid Xero authorization")
     
-    # user_data will contain email, name, xero_user_id, tenant_id
-    # Create/update user in your database here
-    
     return {"success": "User registered successfully"}
 
 @app.post("/api/xero-signin")
-async def xero_signin(req: XeroAuthRequest):
+async def xero_signin(req: XeroAuthRequest) -> dict:
     """
-    Same flow as signup - Xero OAuth handles both
+    Xero signin workflow
+
+    req (XeroAuthRequest): The request body containing the authorization code.
+
+    Returns:
+        dict: Success message on successful sign-in
     """
     user_data = await verify_xero_auth(req.code)
     if not user_data:
@@ -1034,9 +1160,16 @@ async def xero_signin(req: XeroAuthRequest):
     return {"success": "User signed in successfully"}
 
 @app.get("/connect/xero")
-async def connect_xero(user=Depends(get_current_user)):
+async def connect_xero(user=Depends(get_current_user)) -> dict:
     #need to deny multiple connections for now
-    """Initiate Xero OAuth flow"""
+    """
+    User connect to Xero app
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Authorization URL for Xero OAuth2 {auth_url: ...}
+    """
     claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -1057,8 +1190,16 @@ async def connect_xero(user=Depends(get_current_user)):
     return {"auth_url": auth_url}
 
 @app.get("/callback/xero")
-async def callback_xero(code: str = "", state: str = ""):
-    """Handle OAuth callback from Xero"""
+async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
+    """
+    Handle OAuth callback from Xero
+
+    code (str): The authorization code from Xero.
+    state (str): The encrypted state containing the user token.
+
+    Returns:
+        RedirectResponse: Redirects to the frontend after processing
+    """
     
     decrypted_key = Encryption_function.decrypt(state)
     jwt_key = decrypted_key.decode()
@@ -1122,74 +1263,8 @@ async def callback_xero(code: str = "", state: str = ""):
     
     # Fetch all data
     all_data = fetch_all_data(tenant_id)
-    
-    # Transform to preview format for PDF generation
-    preview = {
-        "settings": {
-            "accounts": (all_data["data"].get("accounts") or [None])[0],
-            "accounts_total": len(all_data["data"].get("accounts", [])),
-            "accounts_list": all_data["data"].get("accounts", []),
+    preview = generate_xero_preview(all_data)
 
-            "tax_rates": (all_data["data"].get("tax_rates") or [None])[0],
-            "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
-            "tax_rates_list": all_data["data"].get("tax_rates", []),
-
-            "tracking_categories": (all_data["data"].get("tracking_categories") or [None])[0],
-            "tracking_categories_total": len(all_data["data"].get("tracking_categories", [])),
-            "tracking_categories_list": all_data["data"].get("tracking_categories", []),
-        },
-        "transactions": {
-            "bank_transactions": (all_data["data"].get("bank_transactions") or [None])[0],
-            "bank_transactions_total": len(all_data["data"].get("bank_transactions", [])),
-            "bank_transactions_list": all_data["data"].get("bank_transactions", []),
-
-            "payments": (all_data["data"].get("payments") or [None])[0],
-            "payments_total": len(all_data["data"].get("payments", [])),
-            "payments_list": all_data["data"].get("payments", []),
-
-            "credit_notes": (all_data["data"].get("credit_notes") or [None])[0],
-            "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
-            "credit_notes_list": all_data["data"].get("credit_notes", []),
-
-            "manual_journals": (all_data["data"].get("manual_journals") or [None])[0],
-            "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
-            "manual_journals_list": all_data["data"].get("manual_journals", []),
-
-            "overpayments": (all_data["data"].get("overpayments") or [None])[0],
-            "overpayments_total": len(all_data["data"].get("overpayments", [])),
-            "overpayments_list": all_data["data"].get("overpayments", []),
-
-            "prepayments": (all_data["data"].get("prepayments") or [None])[0],
-            "prepayments_total": len(all_data["data"].get("prepayments", [])),
-            "prepayments_list": all_data["data"].get("prepayments", []),
-
-            "invoices": (all_data["data"].get("invoices") or [None])[0],
-            "invoices_total": len(all_data["data"].get("invoices", [])),
-            "invoices_list": all_data["data"].get("invoices", []),
-
-            "bank_transfers": (all_data["data"].get("bank_transfers") or [None])[0],
-            "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
-            "bank_transfers_list": all_data["data"].get("bank_transfers", []),
-        },
-        "payroll": {
-            "employees": (all_data["data"].get("employees") or [None])[0],
-            "employees_total": len(all_data["data"].get("employees", [])),
-            "employees_list": all_data["data"].get("employees", []),
-
-            "payruns": (all_data["data"].get("payruns") or [None])[0],
-            "payruns_total": len(all_data["data"].get("payruns", [])),
-            "payruns_list": all_data["data"].get("payruns", []),
-
-            "payslips": (all_data["data"].get("payslips") or [None])[0],
-            "payslips_total": len(all_data["data"].get("payslips", [])),
-            "payslips_list": all_data["data"].get("payslips", []),
-        },
-        "reports": {
-            "profit_loss": all_data["data"].get("profit_loss"),
-            "balance_sheet": all_data["data"].get("balance_sheet"),
-        }
-    }
-    
     result = {
         "status": "success",
         "organization": org_name,
@@ -1202,16 +1277,7 @@ async def callback_xero(code: str = "", state: str = ""):
     
     # Generate all PDF reports
     try:
-        s3_keys = []
-        s3_keys.append(generate_accounts_report(result, "xero_accounts_report.pdf", hashed_email))
-        s3_keys.append(generate_transactions_report(result, "xero_transactions_report.pdf", hashed_email))
-        s3_keys.append(generate_payments_report(result, "xero_payments_report.pdf", hashed_email))
-        s3_keys.append(generate_credit_notes_report(result, "xero_credit_notes_report.pdf", hashed_email))
-        s3_keys.append(generate_payroll_report(result, "xero_payroll_report.pdf", hashed_email))
-        s3_keys.append(generate_invoices_report(result, "xero_invoices_report.pdf", hashed_email))
-        s3_keys.append(generate_bank_transfers_report(result, "xero_bank_transfers_report.pdf", hashed_email))
-        s3_keys.append(generate_reports_summary(result, "xero_financial_reports.pdf", hashed_email))
-        
+        s3_keys = generate_all_reports_xero(result, hashed_email)
         result["pdf_reports"] = s3_keys
         result["s3_bucket"] = bucket_name
     except Exception as e:
@@ -1225,9 +1291,14 @@ async def callback_xero(code: str = "", state: str = ""):
     )
     
 @app.get("/xero/connections")
-async def get_xero_connections(user=Depends(get_current_user)):
+async def get_xero_connections(user=Depends(get_current_user)) -> dict:
     """
     Fetch all Xero connections (organizations) for the logged-in user.
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: List of Xero connections {connections: [...]}
     """
     claims, _ = user
     auth0_id = claims["sub"]
@@ -1257,14 +1328,19 @@ async def get_xero_connections(user=Depends(get_current_user)):
             status_code=response.status_code,
             detail=f"Failed to fetch Xero connections: {response.text}"
         )
-    print(response.json())
     connections = response.json()
     return {"connections": connections}
 
 @app.delete("/xero/connections/{connection_id}")
-async def delete_xero_connection(connection_id: str, user=Depends(get_current_user)):
+async def delete_xero_connection(connection_id: str, user=Depends(get_current_user)) -> dict:
     """
     Delete a specific Xero connection (organization) for the logged-in user.
+
+    connection_id (str): The ID of the Xero connection to delete.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on successful deletion
     """
     claims, _ = user
     auth0_id = claims["sub"]
@@ -1301,7 +1377,15 @@ async def delete_xero_connection(connection_id: str, user=Depends(get_current_us
 # MYOB
 # ------------------------
 @app.post("/myob/user_redirect")
-async def myob_redirect(user=Depends(get_current_user)):
+async def myob_redirect(user=Depends(get_current_user)) -> dict:
+    '''
+    Redirect the user to MYOB auth flow
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Verification URL and state for MYOB authorization {verification_url: ..., state: ...}
+    '''
     claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -1319,7 +1403,16 @@ async def myob_redirect(user=Depends(get_current_user)):
     }
 
 @app.get("/myob/callback")
-async def myob_callback_compilation(request: Request, background_tasks: BackgroundTasks):
+async def myob_callback_compilation(request: Request, background_tasks: BackgroundTasks) -> RedirectResponse:
+    '''
+    Parse the MYOB callback and generate pdfs in the background
+
+    request (Request): The request object containing query parameters.
+    background_tasks (BackgroundTasks): The background tasks manager.
+
+    Returns:
+        RedirectResponse: Redirects to the frontend after processing
+    '''
     query_params = request.query_params
     code = query_params.get("code")
     code = urllib.parse.unquote(code)
@@ -1351,32 +1444,6 @@ async def myob_callback_compilation(request: Request, background_tasks: Backgrou
     update_anonymized_json_general(hashed_user_email, "myob_reports", expected_reports_myob)
 
     return RedirectResponse(url=REDIRECT_URL)
-
-def process_myob_data(code: str, business_id: str, state: str, hashed_user_email: str):
-    try:
-        tokens = get_access_token_myob(code)
-        
-        if not tokens:
-            return
-        
-        access_token = tokens.get("access_token")
-        # refresh_token = tokens.get("refresh_token")
-        
-        myob_data = retrieve_endpoints_myob(access_token, business_id)
-
-        payroll_pdf = generate_payroll_pdf(myob_data)
-        sales_pdf = generate_sales_pdf(myob_data)
-        banking_pdf = generate_banking_pdf(myob_data)
-        purchases_pdf = generate_purchases_pdf(myob_data)
-        
-        # Upload to S3
-        upload_myob_pdf_to_s3(payroll_pdf, hashed_user_email, "Broker_Payroll_Summary.pdf")
-        upload_myob_pdf_to_s3(sales_pdf, hashed_user_email, "Broker_Sales_Summary.pdf")
-        upload_myob_pdf_to_s3(banking_pdf, hashed_user_email, "Broker_Banking_Summary.pdf")
-        upload_myob_pdf_to_s3(purchases_pdf, hashed_user_email, "Broker_Purchases_Summary.pdf")
-        
-    except Exception as e:
-        print(f"✗ Error processing MYOB data: {e}")
 
 # ------------------------
 # Health Checks

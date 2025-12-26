@@ -76,10 +76,14 @@ def verify_google_token(token: str) -> dict:
 # ------------------------
 # Xero Verification
 # ------------------------
-async def verify_xero_auth(code: str):
+async def verify_xero_auth(code: str) -> dict | None:
     """
     Verify Xero authorization code and return user information.
-    Similar to your verify_google_token function.
+
+    code (str): The authorization code received from Xero OAuth flow.
+
+    Returns:
+        dict: User information including email, name, tenant_id, etc.
     """
     try:   
         # Step 1: Exchange code for tokens

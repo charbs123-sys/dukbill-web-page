@@ -362,7 +362,16 @@ def get_client_verified_ids_documents(client_id: str, emails: list, category: st
 # Xero Documents
 # ------------------------
 def update_anonymized_json_general(hashed_email: str, parent_header: str, sibling_header: list[str]) -> None:
+    '''
+    updating anonymized json for myob and xero
 
+    hashed_email (str): The hashed email identifier
+    parent_header (str): The parent header in the JSON structure (e.g., "xero_reports", "myob_reports")
+    sibling_header (list[str]): List of sibling filenames to add under the parent header
+    
+    Returns:
+        None
+    '''
     # Implementation for updating anonymized JSON
     ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
     documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
@@ -458,6 +467,14 @@ async def upload_client_document(client_email: str, category: str, category_data
     """
     Uploads a new client document to S3 and updates the JSON metadata file.
     Expects category_data as a dictionary.
+
+    client_email (str): The client's email address
+    category (str): The document category (e.g., "Income & Employment Documents")
+    category_data (dict): Additional data related to the category
+    file (UploadFile): The uploaded file object
+
+    Returns:
+        dict: Metadata of the newly uploaded document
     """
     hashed_email = hash_email(client_email)
 
@@ -530,6 +547,15 @@ async def upload_bytes_to_s3(file_bytes: bytes, s3_key: str, bucket_name: str = 
 def add_comment_docs_general(client_id: str, hashed_email: str, category: str, comment: str, parent_header: str) -> None:
     """
     Adds a broker comment to a general document in the anonymized JSON.
+
+    client_id (str): The client identifier
+    hashed_email (str): The hashed email identifier
+    category (str): The filename to add the comment to
+    comment (str): The comment to add
+    parent_header (str): The parent header in the JSON structure (e.g., "xero_reports", "myob_reports")
+
+    Returns:
+        None
     """
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -552,9 +578,18 @@ def add_comment_docs_general(client_id: str, hashed_email: str, category: str, c
     else:
         raise HTTPException(status_code=404, detail=f"Document with category '{category}' not found")
 
+#Check if this works when the comment is on the second file
 def add_comment_client_document(client_id: str, hashed_email: str, category: str, comment: str) -> None:
     """
     Adds a broker comment to a client document in the anonymized JSON.
+
+    client_id (str): The client identifier
+    hashed_email (str): The hashed email identifier
+    category (str): The document category to filter (e.g., "Income & Employment Documents")
+    comment (str): The comment to add
+
+    Returns:
+        None
     """
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -636,6 +671,12 @@ def remove_comment_client_document(client_id: str, hashed_email: str, category: 
 def delete_client_document(hashed_email: str, threadid: str) -> None:
     """
     Deletes a client document metadata and associated PDFs in S3.
+
+    hashed_email (str): The hashed email identifier
+    threadid (str): The thread ID of the document to delete
+
+    Returns:
+        None
     """
     if not threadid:
         raise HTTPException(status_code=400, detail="Missing threadid")
@@ -695,6 +736,7 @@ def delete_email_documents(hashed_email: str) -> None:
             except s3.exceptions.NoSuchKey:
                 pass
 
+#Will delete this later
 def delete_client_document_identity(doc_name: str, hashed_email: str):
     """
     Delete verified identity documents (both front and back) from S3.
@@ -733,14 +775,17 @@ def delete_client_document_identity(doc_name: str, hashed_email: str):
         logging.error(f"Error deleting identity documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete identity documents")
 
-#deleting documents for myob and xero, eventually any document type
+
 def delete_docs_general(report_name: str, hashed_email: str, report_type: str):
     """
     Delete a general document from S3.
     
-    Args:
-        report_name: The name of the document to delete
-        hashed_email: The hashed email identifier
+    report_name (str): The name of the document to delete
+    hashed_email (str): The hashed email identifier
+    report_type (str): The type of report to delete
+
+    Returns:
+        None
     """
     try:
         # Construct the S3 key
@@ -797,6 +842,9 @@ def move_pdfs_to_new_category(hashed_email: str, threadid: str, old_category: st
 # Edit Documents
 # ------------------------          
 def edit_client_document(hashed_email: str, update_data: dict) -> dict:
+    '''
+    update and existing document
+    '''
     card_id = update_data.get("id")
     if not card_id:
         raise HTTPException(status_code=400, detail="Missing document id")
@@ -809,9 +857,11 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
 
     old_category = documents[doc_index].get("broker_document_category")
 
+    #Change the category
     if "category" in update_data:
         documents[doc_index]["broker_document_category"] = update_data["category"]
 
+    #Change the category data
     if "category_data" in update_data:
         documents[doc_index]["category_data"] = dict(update_data["category_data"])
       
@@ -827,6 +877,16 @@ def edit_client_document(hashed_email: str, update_data: dict) -> dict:
 # Download Documents
 # ------------------------
 def get_download_urls(hashed_email: str, category: str, threadid: str) -> str:
+    '''
+    Get the download url of any individual pdf
+
+    hashed_email (str): The hashed email identifier
+    category (str): The document category to filter (e.g., "Income & Employment Documents")
+    threadid (str): The thread ID of the document
+
+    Returns:
+        str: Download URL of the PDF
+    '''
     prefix = f"{hashed_email}/categorised/{category}/pdfs/"
     response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 

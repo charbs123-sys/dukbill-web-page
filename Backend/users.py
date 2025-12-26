@@ -80,6 +80,9 @@ def find_broker(user_id):
     return broker
 
 def get_user_from_client(client_id):
+    '''
+    Fetching the user information from client_id
+    '''
     return get_user_by_client_id(client_id)
 
 # ------------------------
@@ -204,10 +207,16 @@ def remove_client_broker(client_id, broker_id):
 #  Broker
 # ------------------------
 def get_broker_clients(broker_id):
+    '''
+    Intermediate function to get all clients for a broker
+    '''
     if verify_broker(broker_id):
         return get_clients_for_broker(broker_id)
 
 def toggle_client_verification(client_id, broker_id):
+    '''
+    Intermediate function to toggle client document verification status
+    '''
     if not verify_client(client_id) and not verify_broker(broker_id):
         raise HTTPException(status_code=403, detail="Invalid client")
     return toggle_client_verify_db(client_id, broker_id)
@@ -217,6 +226,9 @@ def toggle_client_verification(client_id, broker_id):
 #
 
 def get_client_broker_list(client_id):
+    '''
+    Get all brokers associated with a client
+    '''
     if not verify_client(client_id):
         raise HTTPException(status_code=403, detail="Invalid client or broker")
     
