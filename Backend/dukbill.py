@@ -676,7 +676,7 @@ async def add_document_comment(client_id: int, request: dict, user=Depends(get_c
     elif category.startswith("Broker_"):
         add_comment_docs_general(client_id, hashed_user_email, category, request.get("comment", ""), "myob_reports")
     else:
-        add_comment_client_document(client_id, hashed_user_email, category, request.get("comment", ""))
+        add_comment_client_document(client_id, hashed_user_email, category, request.get("comment", ""), request.get("threadid", None))
     
     return {"message": "Comment added successfully"}
 

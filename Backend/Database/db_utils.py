@@ -45,7 +45,6 @@ def search_user_by_auth0(auth0_id: str) -> dict:
         stmt = select(Users).where(Users.auth0_id == auth0_id)
         result = session.execute(stmt).scalar_one_or_none()
         if result:
-            # Return as dictionary to match original behavior
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
