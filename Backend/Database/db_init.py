@@ -26,7 +26,7 @@ class Users(Base):
     __tablename__ = "users"
     user_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     auth0_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    basiq_id: Mapped[Optional[str]] = mapped_column(String(255))
+    #basiq_id: Mapped[Optional[str]] = mapped_column(String(255))
     name: Mapped[Optional[str]] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(20))

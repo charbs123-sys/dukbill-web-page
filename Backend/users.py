@@ -273,9 +273,10 @@ def delete_client_email(client_id: str, email: str) -> None:
         raise HTTPException(status_code=403, detail="Invalid client or email")
     
     return delete_email_db(client_id, email)
-        
+'''        
 # ------------------------
 #  Basiq
 # ------------------------
 def add_basiq_id(user_id, basiq_id):
     add_basiq_id_db(user_id, basiq_id)
+'''

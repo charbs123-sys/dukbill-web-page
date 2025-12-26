@@ -49,7 +49,6 @@ def search_user_by_auth0(auth0_id: str) -> dict:
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
-                'basiq_id': result.basiq_id,
                 'name': result.name,
                 'email': result.email,
                 'phone': result.phone,
@@ -109,7 +108,6 @@ def get_user_by_client_id(client_id):
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
-                'basiq_id': result.basiq_id,
                 'name': result.name,
                 'email': result.email,
                 'phone': result.phone,
@@ -155,7 +153,6 @@ def verify_user_by_id(user_id: str) -> dict:
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
-                'basiq_id': result.basiq_id,
                 'name': result.name,
                 'email': result.email,
                 'phone': result.phone,
@@ -552,6 +549,7 @@ def delete_email_db(client_id: str, email: str) -> None:
         session.commit()
         
         return
+'''
 # ------------------------
 # Basiq API
 # ------------------------
@@ -561,3 +559,4 @@ def add_basiq_id_db(user_id, basiq_id):
         if user:
             user.basiq_id = basiq_id
             session.commit()
+'''

@@ -34,10 +34,6 @@ S3_CONFIG = {
 # --- Cloudfront Configuration ---
 CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
 
-# --- Basiq API Configuration ---
-BASIQ_API_KEY = os.environ.get("BASIQ_API_KEY")
-BASIQ_BASE_URL = os.environ.get("BASIQ_BASE_URL")
-
 # --- Gmail API Configuration ---
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
