@@ -141,9 +141,17 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
 
     return headings
 
+###provide better comments for this
 def get_client_category_documents(client_id: str, emails: list, category: str) -> list:
     """
     Returns all documents for a client filtered by category across multiple emails.
+
+    client_id (str): the client id
+    emails (list): List of email addresses
+    category (str): The document category to filter (e.g., "Income & Employment Documents")
+
+    Returns:
+        list: List of documents in the specified category
     """
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
@@ -365,7 +373,7 @@ def update_anonymized_json_general(hashed_email: str, parent_header: str, siblin
 # ------------------------
 # MYOB Documents
 # ------------------------
-
+#provide better comments
 def get_docs_general(client_id: str, emails: list, category: str) -> list:
     """
     General dispatcher to get documents based on category.
@@ -375,6 +383,7 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
 
     docs = []
     
+    #determine type of document to fetch
     if category.startswith("Broker_"):
         prefix = "myob_reports"
         category_label = "MYOB Reports"
@@ -401,7 +410,7 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
         return []
     # Get the filename for the requested category
     doc_category_name = category_to_filename.get(category)
-    # If category is not a MYOB report type, return empty list
+    # If category is not any of the above report types, return empty list
     if not doc_category_name:
         return []
 
@@ -569,6 +578,14 @@ def add_comment_client_document(client_id: str, hashed_email: str, category: str
 def remove_comment_docs_general(client_id: str, hashed_email: str, category: str, parent_header: str) -> None:
     """
     Removes a broker comment from a general document in the anonymized JSON.
+
+    client_id (str): The client identifier
+    hashed_email (str): The hashed email identifier
+    category (str): The document category to filter (e.g., "Income & Employment Documents")
+    parent_header (str): The parent header in the JSON structure (e.g., "xero_reports", "myob_reports")
+
+    Returns:
+        None
     """
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")

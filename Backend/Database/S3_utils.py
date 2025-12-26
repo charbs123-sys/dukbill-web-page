@@ -17,12 +17,10 @@ def list_files(prefix: str = ""):
         return []
     return [obj["Key"] for obj in response["Contents"]]
 
-# def get_pdf_file(key: str):
-#     s3_object = s3.get_object(Bucket=bucket_name, Key=key)
-#     file_bytes = s3_object["Body"].read()
-#     return StreamingResponse(io.BytesIO(file_bytes), media_type="application/pdf")
-
-def get_json_file(hashed_email, endpoint):
+def get_json_file(hashed_email: str, endpoint: str) -> dict:
+    '''
+    Fetch a JSON file from a particular directory
+    '''
     key = hashed_email + endpoint
     try:
         s3_object = s3.get_object(Bucket=bucket_name, Key=key)
@@ -44,8 +42,11 @@ def get_json_file(hashed_email, endpoint):
 
 def get_cloudfront_url(key: str) -> str:
     return f"https://{CLOUDFRONT_DOMAIN}/{key}"
-    
-def save_json_file(hashed_email, endpoint, data):
+
+def save_json_file(hashed_email: str, endpoint: str, data) -> None:
+    '''
+    Save a JSON file to a particular directory
+    '''
     key = hashed_email + endpoint
     try:
         json_str = json.dumps(data, ensure_ascii=False, indent=2)

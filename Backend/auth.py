@@ -21,10 +21,14 @@ jwks_client = PyJWKClient(jwks_url)
 # ------------------------
 # Auth0 JWT Verification
 # ------------------------
-def verify_token(token: str):
+def verify_token(token: str) -> dict:
     """
     Verify an Auth0 JWT token and return the decoded payload.
-    Returns None if verification fails.
+    
+    token (str): JWT token to verify
+
+    Returns:
+        dict: The decoded JWT payload
     """
     try:
         # Get signing key from JWT
@@ -47,10 +51,15 @@ def verify_token(token: str):
 # ------------------------
 # Google Token Verification
 # ------------------------
-def verify_google_token(token: str):
+def verify_google_token(token: str) -> dict:
     """
     Verify a Google ID token and return the decoded payload.
     Returns None if token is invalid or email is not verified.
+
+    token (str): Google ID token to verify
+
+    Returns:
+        dict: decoded token payload
     """
     try:
         payload = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)

@@ -50,12 +50,18 @@ def truncate_pdf(file_bytes: bytes) -> bytes:
     return b''
 
 def get_email_domain(email: str):
+    '''
+    Get domain from email address
+    '''
     try:
         return email.split("@")[1]
     except IndexError:
         raise ValueError(f"Invalid email address: {email}")
     
 def hash_email(email):
+    '''
+    Turn email into 256 hash representation
+    '''
     return hashlib.sha256(email.encode('utf-8')).hexdigest()
 
 

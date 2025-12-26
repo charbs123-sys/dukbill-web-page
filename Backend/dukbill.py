@@ -116,7 +116,15 @@ expected_reports_myob = [
 # ------------------------
 # Dependencies
 # ------------------------
-def get_user_info_from_auth0(access_token: str):
+def get_user_info_from_auth0(access_token: str) -> dict:
+    '''
+    Fetch user information from Auth0 using the provided access token.
+
+    access_token (str): The Auth0 access token.
+
+    Returns:
+        dict: The user profile information. {"sub": auth0id, "given_name": ..., "nickname": ..., "name": ..., "picture": ..., "locale": ..., "updated_at": ..., "email": ..., "email_verified": ...}
+    '''
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
     session = requests.Session()
     try:
@@ -132,6 +140,15 @@ def get_user_info_from_auth0(access_token: str):
         raise HTTPException(status_code=503, detail=f"Auth0 request failed: {str(e)}")
     
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    '''
+    Retrieve and verify the current user based on the provided HTTP Bearer token.
+
+    credentials (HTTPAuthorizationCredentials): The HTTP Bearer token credentials.
+
+    Returns:
+        claims (dict): The decoded JWT claims of the user. {iss: issuer, sub: login type, aud: audient, iat: issued at, exp: expiration, scope: scopes..., azp: authorized party}
+        token (str): The original JWT token.
+    '''
     token = credentials.credentials
     claims = verify_token(token)
     if not claims:
@@ -143,7 +160,15 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 # Auth Routes
 # ------------------------
 @app.post("/api/google-signup")
-async def google_signup(req: GoogleTokenRequest):
+async def google_signup(req: GoogleTokenRequest) -> dict:
+    '''
+    Sign up user via google token
+
+    req (GoogleTokenRequest): The request body containing the Google token.
+
+    Returns:
+        dict: Success message on succesful registration
+    '''
     payload = verify_google_token(req.googleToken)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid Google token")
@@ -151,7 +176,15 @@ async def google_signup(req: GoogleTokenRequest):
 
 @app.post("/auth/register")
 async def register(user=Depends(get_current_user)):
-    claims, access_token = user
+    '''
+    Start user registration process
+    
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Core user information {user: user_id, isNewUser: bool, missingFields: missing entries, profileComplete: bool}
+    '''
+    _, access_token = user
     profile = get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
 
@@ -161,7 +194,10 @@ async def register(user=Depends(get_current_user)):
 
 @app.post("/auth/check-verification")
 async def user_email_authentication(user=Depends(get_current_user)):
-    claims, access_token = user
+    '''
+    Simple check on whether the users email has been verified
+    '''
+    _, access_token = user
     profile = get_user_info_from_auth0(access_token)
     return {"email_verified": profile["email_verified"]}
 
@@ -170,10 +206,19 @@ async def user_email_authentication(user=Depends(get_current_user)):
 # ------------------------
 @app.get("/user/profile")
 async def fetch_user_profile(user=Depends(get_current_user)):
+    '''
+    Collect user profile information
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: User profile information {name: ..., id: ..., picture: ..., user_type: "broker" or "client", email_verified: bool}
+    '''
     claims, access_token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
 
+    #need to cache email_verified in local DB
     jwt_info = get_user_info_from_auth0(access_token)
     
     if user_obj["isBroker"]:
@@ -188,7 +233,16 @@ async def fetch_user_profile(user=Depends(get_current_user)):
     return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_verified": jwt_info["email_verified"]}
 
 @app.patch("/users/onboarding")
-async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
+async def complete_profile(profile_data: dict, user=Depends(get_current_user)) -> dict:
+    '''
+    Finalizing user onboarding process
+
+    profile_data (dict): The profile data to update.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Updated user information {user: user_id, profileComplete: bool, missingFields: list of missing entries, validatedBroker: bool}
+    '''
     claims, access_token = user
     profile = get_user_info_from_auth0(access_token)
     auth0_id = profile["sub"]
@@ -198,13 +252,16 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
     validatedBroker = False
 
     if user_type == "client":
+        #adding client to database
         client_id = register_client(user_obj["user_id"], broker_id)
         client_add_email(client_id, get_email_domain(user_obj["email"]), user_obj["email"])
         validatedBroker = bool(client_id)
         
     elif user_type == "broker":
+        #adding broker to database
         register_broker(user_obj["user_id"])
         validatedBroker = True
+
 
     user_obj = update_profile(auth0_id, profile_data)
 
@@ -215,8 +272,21 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)):
         "validatedBroker": validatedBroker,
     }
 
+# ------------------------
+# Handling Emails
+# ------------------------
+
 @app.post("/add/email")
 async def add_email(email: str, user=Depends(get_current_user)):
+    '''
+    Adding new emails to database when scanning email
+
+    email (str): The email address to add.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful addition
+    '''
     claims, access_token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -232,6 +302,14 @@ async def add_email(email: str, user=Depends(get_current_user)):
 
 @app.get("/get/emails")
 async def get_emails(user=Depends(get_current_user)):
+    '''
+    Retrieving all emails associated with the client
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        list: List of email addresses associated with the client
+    '''
     claims, access_token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -240,6 +318,11 @@ async def get_emails(user=Depends(get_current_user)):
 
 @app.delete("/delete/email")
 async def delete_email(request: Request, user=Depends(get_current_user)):
+    '''
+    Deleting the email associated with the client
+
+    request (Request): The request object containing the email to delete. {email: email_address}
+    '''
     claims, access_token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -258,9 +341,20 @@ async def delete_email(request: Request, user=Depends(get_current_user)):
 # ------------------------
 @app.get("/clients/dashboard")
 async def get_client_documents(user=Depends(get_current_user)):
+    '''
+    Generating the client dashboard view
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Client dashboard information {headings: [...], BrokerAccess: [...], loginEmail: ...}
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+    if not user_obj or user_obj["isBroker"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
     # Extract email addresses for comparison
@@ -272,8 +366,9 @@ async def get_client_documents(user=Depends(get_current_user)):
     
     #get emails, xero and myob docs
     headings = get_client_dashboard(client["client_id"], emails)
-    verified_headings = get_client_verified_ids_dashboard(client["client_id"], [user_obj["email"]])
 
+    #to remove later
+    verified_headings = get_client_verified_ids_dashboard(client["client_id"], [user_obj["email"]])
     if verified_headings:
         headings.extend(verified_headings)
 
@@ -285,10 +380,22 @@ async def get_client_documents(user=Depends(get_current_user)):
 
 @app.post("/clients/category/documents")
 async def get_category_documents(request: dict, user=Depends(get_current_user)):
+    '''
+    Fetching documents of an individual category
+
+    request (dict) -> {category: category_name}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        list: List of documents in the specified category
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     category = request.get("category")
     user_obj = find_user(auth0_id)
+    if not user_obj or user_obj["isBroker"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     client = find_client(user_obj["user_id"])
     emails = get_client_emails(client["client_id"])
 
@@ -301,6 +408,7 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
     documents = get_client_category_documents(client["client_id"], emails, category)
 
+    #want to remove later anyways
     if category in ["Driving License", "Id Card", "Passport"]:
         verified_docs = get_client_verified_ids_documents(client["client_id"], [user_obj["email"]], category)
         documents.extend(verified_docs)
@@ -312,6 +420,15 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
 
 @app.post("/clients/remove/comment")
 async def remove_client_document_comment(request: dict, user=Depends(get_current_user)):
+    '''
+    Give clients the ability to remove comments
+
+    request (dict) -> {category: category_name, hashed_email: hashed_email}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful removal
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -319,6 +436,7 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
     category = request.get("category")
     hashed_user_email = request.get("hashed_email")
     
+    #determine which type of document to remove comment from
     if category.startswith("xero_"):
         remove_comment_docs_general(client["client_id"], hashed_user_email, category, "xero_reports")
     elif category.startswith("Broker_"):
@@ -330,6 +448,15 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
 
 @app.post("/add/broker")
 async def add_broker(broker_id: str, user=Depends(get_current_user)):
+    '''
+    Allow clients to add brokers to their account
+
+    broker_id (str): The broker ID to add.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Registered broker information {broker_id: ...}
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -344,7 +471,15 @@ async def add_broker(broker_id: str, user=Depends(get_current_user)):
     return {"broker_id": registered_broker_id}
 
 @app.get("/get/brokers")
-async def get_brokers(user=Depends(get_current_user)):
+async def get_brokers(user=Depends(get_current_user)) -> list:
+    '''
+    Fetch all the brokers associated with the client
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        list: List of brokers associated with the client
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -353,7 +488,16 @@ async def get_brokers(user=Depends(get_current_user)):
     return get_client_brokers(client["client_id"])
     
 @app.post("/broker/access")
-async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_user)):
+async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_user)) -> dict:
+    '''
+    Toggle whether broker has access to client documents
+
+    broker_id (str): The broker ID to toggle access for.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Updated broker access status {BrokerAccess: bool}
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user = find_user(auth0_id)
@@ -362,7 +506,16 @@ async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_us
     return {"BrokerAccess": toggle_broker_access(client["client_id"], broker_id)}
 
 @app.post("/client/broker/delete")
-async def delete_client_broker(broker_id: str, user=Depends(get_current_user)):
+async def delete_client_broker(broker_id: str, user=Depends(get_current_user)) -> dict:
+    '''
+    Allowing client to remove a broker from their account
+
+    broker_id (str): The broker ID to remove.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful removal
+    '''
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -661,6 +814,7 @@ async def gmail_callback(code: str, state: str):
         REDIRECT_URL + "?scan=started"
     )
 
+'''
 #
 # Outlook integration
 #
@@ -714,7 +868,7 @@ async def outlook_callback(code: str, state: str):
         REDIRECT_URL + "?scan=started"
     )
 
-
+'''
 '''
 # ------------------------
 # Basiq Integration
@@ -767,6 +921,7 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 # ------------------------
 @app.post("/shufti/user_redirect")
 async def shufti_redirect(user=Depends(get_current_user)):
+    #going to delete later
     claims, token = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -805,6 +960,7 @@ async def shufti_redirect(user=Depends(get_current_user)):
 
 @app.post('/profile/notifyCallback')
 async def notify_callback(request: Request):
+    #going to delete later
     try:
         raw_data = await request.body()
         response_data = await request.json()
@@ -1228,60 +1384,6 @@ def process_myob_data(code: str, business_id: str, state: str, hashed_user_email
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "dukbill"}
-
-@app.get("/internet/check")
-async def check_internet():
-    """
-    Verify outbound internet from this ECS task (via NAT for IPv4).
-    - DNS resolution (example.com)
-    - HTTPS to ipify (returns the NAT public IP)
-    - Optional HTTP (non-fatal)
-    """
-    import socket, time, json, urllib.request
-    result = {
-        "dns_ok": False,
-        "https_ok": False,
-        "http_ok": False,
-        "public_ip": None,
-        "errors": [],
-        "timestamp": int(time.time()),
-    }
-
-    try:
-        socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)
-        result["dns_ok"] = True
-    except Exception as e:
-        result["errors"].append(f"DNS resolution failed: {e!r}")
-
-    try:
-        req = urllib.request.Request(
-            "https://api.ipify.org?format=json",
-            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if 200 <= r.status < 300:
-                body = json.loads(r.read().decode("utf-8", "replace"))
-                result["public_ip"] = body.get("ip")
-                result["https_ok"] = bool(result["public_ip"])
-                if not result["public_ip"]:
-                    result["errors"].append("HTTPS ok but missing public IP in body.")
-            else:
-                result["errors"].append(f"HTTPS status {r.status}")
-    except Exception as e:
-        result["errors"].append(f"HTTPS request failed: {e!r}")
-
-    try:
-        req = urllib.request.Request(
-            "http://example.com/",
-            headers={"User-Agent": "dukbill-ecs-egress-check/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if 200 <= r.status < 400:
-                result["http_ok"] = True
-    except Exception:
-        pass
-
-    return result
 
 # ------------------------
 # Run App
