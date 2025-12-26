@@ -544,7 +544,10 @@ async def upload_bytes_to_s3(file_bytes: bytes, s3_key: str, bucket_name: str = 
     except Exception as e:
         return None
 
-# Adding Comments
+
+# ------------------------
+# WORKING WITH COMMENTS
+# -----------------------
 
 def add_comment_docs_general(client_id: str, hashed_email: str, category: str, comment: str, parent_header: str) -> None:
     """
@@ -580,7 +583,6 @@ def add_comment_docs_general(client_id: str, hashed_email: str, category: str, c
     else:
         raise HTTPException(status_code=404, detail=f"Document with category '{category}' not found")
 
-#Check if this works when the comment is on the second file
 def add_comment_client_document(client_id: str, hashed_email: str, category: str, comment: str, threadid: str) -> None:
     """
     Adds a broker comment to a client document in the anonymized JSON.
@@ -609,8 +611,6 @@ def add_comment_client_document(client_id: str, hashed_email: str, category: str
         save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     else:
         raise HTTPException(status_code=404, detail=f"Document with category '{category}' not found")
-
-#deleting comments
 
 def remove_comment_docs_general(client_id: str, hashed_email: str, category: str, parent_header: str) -> None:
     """
@@ -645,7 +645,7 @@ def remove_comment_docs_general(client_id: str, hashed_email: str, category: str
     else:
         raise HTTPException(status_code=404, detail=f"Document with category '{category}' not found")
 
-def remove_comment_client_document(client_id: str, hashed_email: str, category: str) -> None:
+def remove_comment_client_document(client_id: str, hashed_email: str, threadid: str) -> None:
     """
     Removes a broker comment from a client document in the anonymized JSON.
     """
@@ -656,7 +656,7 @@ def remove_comment_client_document(client_id: str, hashed_email: str, category: 
     updated = False
 
     for doc in documents:
-        if doc.get("broker_document_category") == category:
+        if doc.get("threadid", "") == threadid:
             if "broker_comment" in doc:
                 del doc["broker_comment"]
                 updated = True
@@ -665,7 +665,7 @@ def remove_comment_client_document(client_id: str, hashed_email: str, category: 
     if updated:
         save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     else:
-        raise HTTPException(status_code=404, detail=f"Document with category '{category}' not found")
+        raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
 
 # ------------------------
 # Delete Documents

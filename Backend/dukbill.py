@@ -420,7 +420,7 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
     elif category.startswith("Broker_"):
         remove_comment_docs_general(client["client_id"], hashed_user_email, category, "myob_reports")
     else:
-        remove_comment_client_document(client["client_id"], hashed_user_email, category)
+        remove_comment_client_document(client["client_id"], hashed_user_email, request.get("threadid", None))
     
     return {"message": "Comment removed successfully"}
 
@@ -708,7 +708,7 @@ async def remove_document_comment(client_id: int, request: dict, user=Depends(ge
     elif category.startswith("Broker_"):
         remove_comment_docs_general(client_id, hashed_user_email, category, "myob_reports")
     else:
-        remove_comment_client_document(client_id, hashed_user_email, category)
+        remove_comment_client_document(client_id, hashed_user_email, request.get("threadid", None))
     
     return {"message": "Comment removed successfully"}
 
