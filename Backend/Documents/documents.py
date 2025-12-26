@@ -4,12 +4,6 @@ from helpers.helper import *
 from config import DOCUMENT_CATEGORIES
 from fastapi import UploadFile
 import uuid
-from redis_utils import (
-    get_or_load_emails_json, 
-    save_emails_json_to_cache,  # NEW - write-back
-    force_sync_to_s3  # NEW - for critical operations
-)
-
 import os
 
 # ------------------------
@@ -56,7 +50,7 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
         hashed_email = hash_email(email)
 
         try:
-            documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+            documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
             for doc in documents:
                 doc["hashed_email"] = hashed_email
             all_documents.extend(documents)
@@ -161,7 +155,7 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
         hashed_email = hash_email(email)
 
         try:
-            documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+            documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
         except HTTPException:
             continue
 
@@ -363,7 +357,7 @@ def update_anonymized_json_general(hashed_email: str, parent_header: str, siblin
 
     # Implementation for updating anonymized JSON
     ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     documents.append({parent_header: [{"filename": sibling} for sibling in sibling_header]})
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     return True
@@ -459,7 +453,7 @@ async def upload_client_document(client_email: str, category: str, category_data
     hashed_email = hash_email(client_email)
 
     ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
 
     threadid = str(uuid.uuid4())
     filename = f"{threadid}_1_{file.filename}"
@@ -482,7 +476,6 @@ async def upload_client_document(client_email: str, category: str, category_data
     
     documents.append(new_doc)
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
-    save_emails_json_to_cache(hashed_email, documents)
     return new_doc
 
 
@@ -532,7 +525,7 @@ def add_comment_docs_general(client_id: str, hashed_email: str, category: str, c
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
 
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     updated = False
 
     for doc in documents:
@@ -557,7 +550,7 @@ def add_comment_client_document(client_id: str, hashed_email: str, category: str
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
 
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     updated = False
 
     for doc in documents:
@@ -580,7 +573,7 @@ def remove_comment_docs_general(client_id: str, hashed_email: str, category: str
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
 
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     updated = False
 
     for doc in documents:
@@ -605,7 +598,7 @@ def remove_comment_client_document(client_id: str, hashed_email: str, category: 
     if not verify_client_by_id(client_id):
         raise HTTPException(status_code=403, detail="Invalid client")
 
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     updated = False
 
     for doc in documents:
@@ -630,14 +623,13 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
     if not threadid:
         raise HTTPException(status_code=400, detail="Missing threadid")
 
-    documents = get_or_load_emails_json(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
     doc_index = next((i for i, d in enumerate(documents) if d.get("threadid") == threadid), None)
     if doc_index is None:
         raise HTTPException(status_code=404, detail=f"Document with threadid '{threadid}' not found")
 
     doc_to_delete = documents.pop(doc_index)
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
-    save_emails_json_to_cache(hashed_email, documents)
 
     category = doc_to_delete.get("broker_document_category", "Uncategorized")
     hashed_email = hash_email(hashed_email)
@@ -747,7 +739,7 @@ def delete_docs_general(report_name: str, hashed_email: str, report_type: str):
             raise HTTPException(status_code=500, detail=f"Failed to delete document: {e}")
     
         #delete from anonymized json
-        documents = get_or_load_emails_json(hashed_email, anonymized_key)
+        documents = get_json_file(hashed_email, anonymized_key)
         for doc in documents:
             reports = doc.get(report_type, [])
             for report_item in reports:

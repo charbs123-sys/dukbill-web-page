@@ -24,7 +24,6 @@ from Database.db_init import initialize_database
 from Database.S3_utils import *
 from EmailScanners.gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 from Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
-from redis_utils import start_expiry_listener
 from shufti import shufti_url
 from helpers.id_helpers import *
 from helpers.xero_helpers import *
@@ -139,13 +138,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return claims, token
 
-
-# ------------------------
-# Redis Startup
-# ------------------------
-@app.on_event("startup")
-async def startup_event():
-    start_expiry_listener()
 
 # ------------------------
 # Auth Routes
