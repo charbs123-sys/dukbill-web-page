@@ -118,6 +118,7 @@ def get_user_by_client_id(client_id):
             }
         return None
 
+'''
 def get_client_broker_access_db(client_id, broker_id):
     with Session(engine) as session:
         stmt = select(ClientBroker).where(
@@ -128,9 +129,17 @@ def get_client_broker_access_db(client_id, broker_id):
         if result:
             return result.brokerAccess
         return None
+'''
 
+def get_client_brokers_db(client_id: str) -> list:
+    '''
+    Retrieving all the brokers associated with a client
 
-def get_client_brokers_db(client_id):
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of brokers associated with the client
+    '''
     with Session(engine) as session:
         stmt = select(ClientBroker).where(ClientBroker.client_id == client_id)
         results = session.execute(stmt).scalars().all()
@@ -146,7 +155,15 @@ def get_client_brokers_db(client_id):
 # ------------------------
 # Verify User/Client/Broker
 # ------------------------
-def verify_user_by_id(user_id: str) -> dict:
+def verify_user_by_id(user_id: str) -> dict | None:
+    '''
+    verify the existence of a user by user_id
+
+    user_id (str): The user ID.
+
+    Returns:
+        dict: User information
+    '''
     with Session(engine) as session:
         result = session.get(Users, user_id)
         if result:
@@ -163,7 +180,15 @@ def verify_user_by_id(user_id: str) -> dict:
             }
         return None
 
-def verify_client_by_id(client_id):
+def verify_client_by_id(client_id: str) -> dict | None:
+    '''
+    verify the existence of a client by client_id
+
+    client_id (str): The client ID.
+
+    Returns:
+        dict: Client information
+    '''
     with Session(engine) as session:
         result = session.get(Clients, client_id)
         if result:
@@ -173,7 +198,15 @@ def verify_client_by_id(client_id):
             }
         return None
 
-def verify_broker_by_id(broker_id):
+def verify_broker_by_id(broker_id: str) -> dict | None:
+    '''
+    verify the existence of a broker by broker_id
+
+    broker_id (str): The broker ID.
+
+    Returns:
+        dict: Broker information
+    '''
     with Session(engine) as session:
         result = session.get(Brokers, broker_id)
         if result:
@@ -183,7 +216,16 @@ def verify_broker_by_id(broker_id):
             }
         return None
 
-def verify_email_db(client_id, email):
+def verify_email_db(client_id: str, email: str) -> dict | None:
+    '''
+    verify the existence of an email for a client
+
+    client_id (str): The client ID.
+    email (str): The email address.
+
+    Returns:
+        dict: Email information
+    '''
     with Session(engine) as session:
         stmt = select(Emails).where(
             Emails.client_id == client_id,

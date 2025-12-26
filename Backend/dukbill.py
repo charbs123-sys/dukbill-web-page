@@ -16,7 +16,7 @@ from External_APIs.basiq_api import BasiqAPI
 # ------------------------
 # File Imports
 # ------------------------
-from config import AUTH0_DOMAIN, XERO_SCOPES
+from config import AUTH0_DOMAIN, XERO_SCOPES, EXPECTED_REPORTS_XERO, EXPECTED_REPORTS_MYOB
 from auth import *
 from users import *
 from Documents.documents import *
@@ -90,29 +90,6 @@ class GoogleTokenRequest(BaseModel):
 class XeroAuthRequest(BaseModel):
     code: str
 
-#
-# Xero Config
-#
-
-expected_reports_xero = [
-    "xero_accounts_report.pdf",
-    "xero_bank_transfers_report.pdf",
-    "xero_credit_notes_report.pdf",
-    "xero_financial_reports.pdf",
-    "xero_invoices_report.pdf",
-    "xero_payments_report.pdf",
-    "xero_payroll_report.pdf",
-    "xero_transactions_report.pdf"
-]
-
-#myob config
-
-expected_reports_myob = [
-    "Broker_Payroll_Summary.pdf",
-    "Broker_Sales_Summary.pdf",
-    "Broker_Banking_Summary.pdf",
-    "Broker_Purchases_Summary.pdf"
-]
 
 # ------------------------
 # Dependencies
@@ -1283,7 +1260,7 @@ async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
     except Exception as e:
         result["pdf_error"] = str(e)
 
-    update_anonymized_json_general(hashed_email, "xero_reports", expected_reports_xero)
+    update_anonymized_json_general(hashed_email, "xero_reports", EXPECTED_REPORTS_XERO)
 
     return RedirectResponse(
         url=REDIRECT_URL,
@@ -1441,7 +1418,7 @@ async def myob_callback_compilation(request: Request, background_tasks: Backgrou
         hashed_user_email
     )
 
-    update_anonymized_json_general(hashed_user_email, "myob_reports", expected_reports_myob)
+    update_anonymized_json_general(hashed_user_email, "myob_reports", EXPECTED_REPORTS_MYOB)
 
     return RedirectResponse(url=REDIRECT_URL)
 
