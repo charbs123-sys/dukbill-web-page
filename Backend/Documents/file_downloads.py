@@ -33,27 +33,30 @@ def _first_email(raw: List[Any]) -> str:
 
 def _invoke_zip_lambda_for(emails: List[str]) -> dict:
     """
-    Invoke Lambda with a list of emails.
-    
-    Args:
-        emails: List of email strings, e.g., ["user1@example.com", "user2@example.com"]
-    
+    Invoke Lambda to create ZIP of PDFs for given emails.
+
+    emails (List[str]): List of email addresses to fetch PDFs for.
+
     Returns:
         dict: Lambda response body containing zip_key, presigned_url, etc.
     """
     # Prepare payload - Lambda expects {"emails": ["email1", "email2", ...]}
     payload_data = {"emails": emails}
     
+    #invoke the lambda function
     resp = lambda_client.invoke(
         FunctionName=ZIP_LAMBDA_NAME,
         InvocationType="RequestResponse",
         Payload=json.dumps(payload_data).encode("utf-8"),
     )
     payload = resp["Payload"].read().decode("utf-8")
+
     try:
-        env = json.loads(payload)  # {"statusCode":..., "body":"{...}"}
+        env = json.loads(payload) 
     except Exception:
         raise HTTPException(status_code=502, detail="Invalid response from ZIP Lambda")
+    
+    # Check Lambda response
     code = env.get("statusCode")
     body_raw = env.get("body")
     body = json.loads(body_raw) if isinstance(body_raw, str) else (body_raw or {})
@@ -65,6 +68,15 @@ def _invoke_zip_lambda_for(emails: List[str]) -> dict:
     raise HTTPException(status_code=502, detail=f"Lambda failed: {err}")
 
 def _stream_s3_zip(key: str, download_name: str) -> StreamingResponse:
+    '''
+    Send a ZIP file from S3 as a streaming response
+
+    key (str): The S3 object key for the ZIP file.
+    download_name (str): The filename to suggest for download.
+
+    Returns:
+        StreamingResponse: The streaming response containing the ZIP file.
+    '''
     try:
         obj = s3.get_object(Bucket=ZIP_BUCKET, Key=key)
     except s3.exceptions.NoSuchKey:

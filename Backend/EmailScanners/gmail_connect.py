@@ -65,8 +65,7 @@ def get_valid_access_token() -> Optional[str]:
     return tokens.get("access_token")
 
 def fetch_authorized_email(access_token: str) -> str | None:
-    """Returns the Google account email tied to this access_token. 
-    Why: Identify which user granted consent."""
+    """Returns the Google account email tied to this access_token."""
     req = urllib.request.Request(
         USERINFO_V2,
         headers={"Authorization": f"Bearer {access_token}"}
@@ -85,6 +84,9 @@ def fetch_authorized_email(access_token: str) -> str | None:
 
 # ===== Gmail query =====
 def list_all_thread_ids(access_token: str, query: str, max_results: int = 500) -> List[str]:
+    '''
+    Find all threadids in the last 2 years for an associated gmail account
+    '''
     headers = {"Authorization": f"Bearer {access_token}"}
     params = {"q": query, "maxResults": max_results}
     thread_ids: List[str] = []
@@ -122,6 +124,9 @@ def post_batches_to_api(
     warnings: List[str],
     is_complete: bool,
 ) -> None:
+    '''
+    Sending jobs to SQS for AWS Lambda to process
+    '''
     # Why chunking: avoid oversized payloads/timeouts downstream.
     job_id = str(uuid.uuid4())
     max_batches = 3
@@ -177,6 +182,17 @@ def exchange_code_for_tokens(code: str) -> dict:
 
 # ===== Gmail scan =====
 def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_token: Optional[str]) -> None:
+    '''
+    Run the gmail scan lambda function
+
+    client_id (str): The client ID to associate emails with.
+    user_email (str): The email address of the user.
+    access_token (str): The valid access token for Gmail API.
+    refresh_token (Optional[str]): The refresh token for obtaining new access tokens.
+
+    Returns:
+        None
+    '''
     if not CLIENT_ID or not CLIENT_SECRET:
         raise RuntimeError("Missing CLIENT_ID/CLIENT_SECRET")
     if not access_token:
@@ -196,7 +212,10 @@ def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_t
 
 
 # ===== OAuth redirect URL =====
-def get_google_auth_url(state):  # ← Add state parameter
+def get_google_auth_url(state: str) -> str:
+    '''
+    Creating the google redirect url
+    '''
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -205,7 +224,7 @@ def get_google_auth_url(state):  # ← Add state parameter
         "access_type": "offline",
         "include_granted_scopes": "false",
         "prompt": "consent",
-        "state": state,  # ← Add this line
+        "state": state,
     }
     return f"{AUTH_URL}?{urlencode(params)}"
 

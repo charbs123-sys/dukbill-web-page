@@ -11,18 +11,19 @@ from config import CLOUDFRONT_DOMAIN
 import logging
 from io import BytesIO
 
+'''
 def list_files(prefix: str = ""):
     response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
     if "Contents" not in response:
         return []
     return [obj["Key"] for obj in response["Contents"]]
+'''
 
-# def get_pdf_file(key: str):
-#     s3_object = s3.get_object(Bucket=bucket_name, Key=key)
-#     file_bytes = s3_object["Body"].read()
-#     return StreamingResponse(io.BytesIO(file_bytes), media_type="application/pdf")
 
-def get_json_file(hashed_email, endpoint):
+def get_json_file(hashed_email: str, endpoint: str) -> dict:
+    '''
+    Fetch a JSON file from a particular directory
+    '''
     key = hashed_email + endpoint
     try:
         s3_object = s3.get_object(Bucket=bucket_name, Key=key)
@@ -44,8 +45,11 @@ def get_json_file(hashed_email, endpoint):
 
 def get_cloudfront_url(key: str) -> str:
     return f"https://{CLOUDFRONT_DOMAIN}/{key}"
-    
-def save_json_file(hashed_email, endpoint, data):
+
+def save_json_file(hashed_email: str, endpoint: str, data) -> None:
+    '''
+    Save a JSON file to a particular directory
+    '''
     key = hashed_email + endpoint
     try:
         json_str = json.dumps(data, ensure_ascii=False, indent=2)
@@ -87,7 +91,8 @@ def ensure_json_file_exists(hashed_email: str, endpoint: str) -> None:
             )
         else:
             raise HTTPException(status_code=500, detail=f"Unexpected S3 error checking '{key}': {e}")
-        
+
+
 def list_s3_files(hashed_email: str, path: str) -> list:
     """
     List all files in an S3 directory for a given hashed_email.
@@ -121,6 +126,8 @@ def list_s3_files(hashed_email: str, path: str) -> list:
         logging.error(f"Error listing S3 files for {hashed_email}{path}: {e}")
         return []
 
+
+
 def upload_pdf_to_s3(buffer, hashed_email, filename):
     """Upload PDF buffer to S3"""
     buffer.seek(0)
@@ -136,6 +143,8 @@ def upload_pdf_to_s3(buffer, hashed_email, filename):
         return s3_key
     except ClientError as e:
         raise
+
+
 
 def upload_myob_pdf_to_s3(pdf_bytes, hashed_email, filename):
     """Upload PDF bytes to S3"""

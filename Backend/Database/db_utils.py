@@ -32,16 +32,22 @@ def get_unique_broker_id():
 # ------------------------
 # Retrieve User/Client/Broker
 # ------------------------
-def search_user_by_auth0(auth0_id):
+def search_user_by_auth0(auth0_id: str) -> dict:
+    '''
+    Search for whether a user exists
+
+    auth0_id (str): The Auth0 user ID.
+
+    Returns:
+        dict: User information
+    '''
     with Session(engine) as session:
         stmt = select(Users).where(Users.auth0_id == auth0_id)
         result = session.execute(stmt).scalar_one_or_none()
         if result:
-            # Return as dictionary to match original behavior
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
-                'basiq_id': result.basiq_id,
                 'name': result.name,
                 'email': result.email,
                 'phone': result.phone,
@@ -52,7 +58,15 @@ def search_user_by_auth0(auth0_id):
             }
         return None
 
-def retrieve_broker(user_id):
+def retrieve_broker(user_id: str) -> dict:
+    '''
+    Search for whether a broker exists
+
+    user_id (str): The user ID.
+
+    Returns:
+        dict: Broker information
+    '''
     with Session(engine) as session:
         stmt = select(Brokers).where(Brokers.user_id == user_id)
         result = session.execute(stmt).scalar_one_or_none()
@@ -63,7 +77,15 @@ def retrieve_broker(user_id):
             }
         return None
 
-def retrieve_client(user_id):
+def retrieve_client(user_id: str) -> dict:
+    '''
+    Search for whether a client exists
+
+    user_id (str): The user ID.
+
+    Returns:
+        dict: Client information
+    '''
     with Session(engine) as session:
         stmt = select(Clients).where(Clients.user_id == user_id)
         result = session.execute(stmt).scalar_one_or_none()
@@ -75,6 +97,9 @@ def retrieve_client(user_id):
         return []
 
 def get_user_by_client_id(client_id):
+    '''
+    From clientid extract user information
+    '''
     with Session(engine) as session:
         stmt = select(Users).join(Clients).where(Clients.client_id == client_id)
         result = session.execute(stmt).scalar_one_or_none()
@@ -82,7 +107,6 @@ def get_user_by_client_id(client_id):
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
-                'basiq_id': result.basiq_id,
                 'name': result.name,
                 'email': result.email,
                 'phone': result.phone,
@@ -93,6 +117,7 @@ def get_user_by_client_id(client_id):
             }
         return None
 
+'''
 def get_client_broker_access_db(client_id, broker_id):
     with Session(engine) as session:
         stmt = select(ClientBroker).where(
@@ -103,9 +128,17 @@ def get_client_broker_access_db(client_id, broker_id):
         if result:
             return result.brokerAccess
         return None
+'''
 
+def get_client_brokers_db(client_id: str) -> list:
+    '''
+    Retrieving all the brokers associated with a client
 
-def get_client_brokers_db(client_id):
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of brokers associated with the client
+    '''
     with Session(engine) as session:
         stmt = select(ClientBroker).where(ClientBroker.client_id == client_id)
         results = session.execute(stmt).scalars().all()
@@ -121,14 +154,21 @@ def get_client_brokers_db(client_id):
 # ------------------------
 # Verify User/Client/Broker
 # ------------------------
-def verify_user_by_id(user_id):
+def verify_user_by_id(user_id: str) -> dict | None:
+    '''
+    verify the existence of a user by user_id
+
+    user_id (str): The user ID.
+
+    Returns:
+        dict: User information
+    '''
     with Session(engine) as session:
         result = session.get(Users, user_id)
         if result:
             return {
                 'user_id': result.user_id,
                 'auth0_id': result.auth0_id,
-                'basiq_id': result.basiq_id,
                 'name': result.name,
                 'email': result.email,
                 'phone': result.phone,
@@ -139,7 +179,15 @@ def verify_user_by_id(user_id):
             }
         return None
 
-def verify_client_by_id(client_id):
+def verify_client_by_id(client_id: str) -> dict | None:
+    '''
+    verify the existence of a client by client_id
+
+    client_id (str): The client ID.
+
+    Returns:
+        dict: Client information
+    '''
     with Session(engine) as session:
         result = session.get(Clients, client_id)
         if result:
@@ -149,7 +197,15 @@ def verify_client_by_id(client_id):
             }
         return None
 
-def verify_broker_by_id(broker_id):
+def verify_broker_by_id(broker_id: str) -> dict | None:
+    '''
+    verify the existence of a broker by broker_id
+
+    broker_id (str): The broker ID.
+
+    Returns:
+        dict: Broker information
+    '''
     with Session(engine) as session:
         result = session.get(Brokers, broker_id)
         if result:
@@ -159,7 +215,16 @@ def verify_broker_by_id(broker_id):
             }
         return None
 
-def verify_email_db(client_id, email):
+def verify_email_db(client_id: str, email: str) -> dict | None:
+    '''
+    verify the existence of an email for a client
+
+    client_id (str): The client ID.
+    email (str): The email address.
+
+    Returns:
+        dict: Email information
+    '''
     with Session(engine) as session:
         stmt = select(Emails).where(
             Emails.client_id == client_id,
@@ -178,7 +243,18 @@ def verify_email_db(client_id, email):
 # ------------------------
 # Add User/Client/Broker
 # ------------------------
-def add_user(auth0_id, email, picture, profileComplete=False):
+def add_user(auth0_id: str, email: str, picture: str, profileComplete=False) -> int:
+    '''
+    Adding new user entry into database
+
+    auth0_id (str): The Auth0 user ID.
+    email (str): The user's email address.
+    picture (str): The user's profile picture URL.
+    profileComplete (bool): Whether they have finished onboarding process
+
+    Returns:
+        int: user ID
+    '''
     with Session(engine) as session:
         new_user = Users(
             auth0_id=auth0_id,
@@ -190,7 +266,15 @@ def add_user(auth0_id, email, picture, profileComplete=False):
         session.commit()
         return new_user.user_id
 
-def add_client(user_id):
+def add_client(user_id: str) -> str:
+    '''
+    Creating a new client entry in the database
+
+    user_id (str): The user ID.
+
+    Returns:
+        str: The newly created client ID.
+    '''
     client_id = get_unique_client_id()
     with Session(engine) as session:
         new_client = Clients(
@@ -201,7 +285,16 @@ def add_client(user_id):
         session.commit()
         return new_client.client_id
 
-def add_client_broker(client_id, broker_id):
+def add_client_broker(client_id: str, broker_id: str) -> str:
+    '''
+    Add a new relationship between clients and brokers in the database
+
+    client_id (str): The client ID.
+    broker_id (str): The broker ID.
+
+    Returns:
+        str: The newly created client_broker ID.
+    '''
     with Session(engine) as session:
         new_client_broker = ClientBroker(
             client_id=client_id,
@@ -213,7 +306,15 @@ def add_client_broker(client_id, broker_id):
         session.commit()
         return new_client_broker.broker_id
 
-def add_broker(user_id):
+def add_broker(user_id: str) -> str:
+    '''
+    Adding a new broker entry in the database
+
+    user_id (str): The user ID.
+
+    Returns:
+        str: The newly created broker ID.
+    '''
     broker_id = get_unique_broker_id()
     with Session(engine) as session:
         new_broker = Brokers(
@@ -227,7 +328,16 @@ def add_broker(user_id):
 # ------------------------
 # User profile
 # ------------------------
-def update_user_profile(auth0_id: str, profile_data: dict):
+def update_user_profile(auth0_id: str, profile_data: dict) -> None:
+    '''
+    Modifying user_type, phone number, name, company in the Users table
+    
+    auth0_id (str): The Auth0 user ID.
+    profile_data (dict): The profile data to update.
+
+    Returns:
+        None
+    '''
     with Session(engine) as session:
         # Get the user
         stmt = select(Users).where(Users.auth0_id == auth0_id)
@@ -265,6 +375,15 @@ def update_user_profile(auth0_id: str, profile_data: dict):
 # Client
 # ------------------------
 def toggle_broker_access_db(client_id: str, broker_id: str) -> bool | None:
+    '''
+    Changing the broker access status for a client-broker relationship
+
+    client_id (str): The client ID.
+    broker_id (str): The broker ID.
+
+    Returns:
+        bool | None: The updated broker access status or None if not found
+    '''
     with Session(engine) as session:
         cb = session.execute(
             select(ClientBroker)
@@ -280,7 +399,15 @@ def toggle_broker_access_db(client_id: str, broker_id: str) -> bool | None:
         session.refresh(cb)
         return cb.brokerAccess
 
-def get_brokers_for_client(client_id: str):
+def get_brokers_for_client(client_id: str) -> list:
+    '''
+    Fetching all the clients associated with a broker
+
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of brokers associated with the client
+    '''
     with Session(engine) as session:
         stmt = (
             select(
@@ -307,7 +434,10 @@ def get_brokers_for_client(client_id: str):
 
         return brokers
 
-def delete_client_broker_db(client_id: str, broker_id: str):
+def delete_client_broker_db(client_id: str, broker_id: str) -> None:
+    '''
+    Delete relationship between client and broker
+    '''
     with Session(engine) as session:
         stmt = delete(ClientBroker).where(
             ClientBroker.client_id == client_id,
@@ -321,7 +451,15 @@ def delete_client_broker_db(client_id: str, broker_id: str):
 # ------------------------
 # Broker
 # ------------------------
-def get_clients_for_broker(broker_id):
+def get_clients_for_broker(broker_id: str) -> list:
+    '''
+    Fetch all clients related to a broker
+
+    broker_id (str): The broker ID.
+
+    Returns:
+        list: List of clients associated with the broker
+    '''
     with Session(engine) as session:
         stmt = (
             select(
@@ -352,6 +490,15 @@ def get_clients_for_broker(broker_id):
         return clients
 
 def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
+    '''
+    Toggle the verification status of a client document for a specific broker.
+
+    client_id (str): The client ID.
+    broker_id (str): The broker ID.
+
+    Returns:
+        bool | None: The updated verification status or None if not found
+    '''
     with Session(engine) as session:
         cb = session.execute(
             select(ClientBroker)
@@ -370,7 +517,17 @@ def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
 # ------------------------
 # Email
 # ------------------------
-def add_email_db(client_id, domain, email):
+def add_email_db(client_id: str, domain: str, email: str) -> None:
+    '''
+    Add email to the emails table
+
+    client_id (str): The client ID.
+    domain (str): The email domain.
+    email (str): The email address.
+
+    Returns:
+        None
+    '''
     with Session(engine) as session:
         new_email = Emails(
             client_id=client_id,
@@ -380,13 +537,29 @@ def add_email_db(client_id, domain, email):
         session.add(new_email)
         session.commit()
 
-def get_client_emails_db(client_id):
+def get_client_emails_db(client_id: str) -> list:
+    '''
+    Fetch all emails associated with a client
+
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of email addresses associated with the client
+    '''
     with Session(engine) as session:
         stmt = select(Emails.email_address).where(Emails.client_id == client_id)
         results = session.execute(stmt).scalars().all()
         return [{'email_address': email} for email in results]
 
-def get_client_emails_dashboard_db(client_id):
+def get_client_emails_dashboard_db(client_id: str) -> list:
+    '''
+    Collecting all emails associated with a client for dashboard display
+
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of email addresses and their domains associated with the client
+    '''
     with Session(engine) as session:
         stmt = select(Emails.email_address, Emails.domain).where(Emails.client_id == client_id)
         results = session.execute(stmt).all()
@@ -397,8 +570,17 @@ def get_client_emails_dashboard_db(client_id):
             }
             for email_address, domain in results
         ]
-        
-def delete_email_db(client_id, email):
+
+def delete_email_db(client_id: str, email: str) -> None:
+    '''
+    Delete the email associated with the client
+
+    client_id (str): The client ID.
+    email (str): The email address to delete.
+
+    Returns:
+        None
+    '''
     with Session(engine) as session:
         stmt = delete(Emails).where(
             Emails.client_id == client_id,
@@ -408,6 +590,7 @@ def delete_email_db(client_id, email):
         session.commit()
         
         return
+'''
 # ------------------------
 # Basiq API
 # ------------------------
@@ -417,3 +600,4 @@ def add_basiq_id_db(user_id, basiq_id):
         if user:
             user.basiq_id = basiq_id
             session.commit()
+'''
