@@ -29,7 +29,7 @@ from helpers.id_helpers import *
 from helpers.xero_helpers import *
 from helpers.myob_helper import *
 from cryptography.fernet import Fernet
-from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
+#from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
 # ------------------------
 # Python Imports
 # ------------------------
@@ -960,9 +960,9 @@ async def outlook_callback(code: str, state: str):
     return RedirectResponse(
         REDIRECT_URL + "?scan=started"
     )
+'''
 
-'''
-'''
+
 # ------------------------
 # Basiq Integration
 # ------------------------
