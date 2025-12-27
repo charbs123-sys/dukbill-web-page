@@ -962,7 +962,7 @@ async def outlook_callback(code: str, state: str):
     )
 '''
 
-
+'''
 # ------------------------
 # Basiq Integration
 # ------------------------
