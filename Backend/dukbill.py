@@ -28,9 +28,6 @@ from shufti import shufti_url
 from helpers.id_helpers import *
 from helpers.xero_helpers import *
 from helpers.myob_helper import *
-from External_APIs.xero_pdf_generation import *
-from helpers.myob_helper import build_auth_url, retrieve_endpoints_myob, get_access_token_myob
-from External_APIs.myob_pdf_generation import generate_payroll_pdf, generate_sales_pdf, generate_banking_pdf, generate_purchases_pdf
 from cryptography.fernet import Fernet
 from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
 # ------------------------
@@ -39,7 +36,6 @@ from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook
 import requests
 import threading
 import os
-import secrets
 import time
 import urllib
 from urllib.parse import urlencode
