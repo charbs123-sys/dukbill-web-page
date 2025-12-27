@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks
 # Model Imports
 # ------------------------
 from pydantic import BaseModel
-from External_APIs.basiq_api import BasiqAPI
+#from External_APIs.basiq_api import BasiqAPI
 
 # ------------------------
 # File Imports
