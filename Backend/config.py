@@ -55,7 +55,7 @@ XERO_SCOPES = "offline_access accounting.settings.read accounting.transactions.r
 # --- IDMerit API Configuration ---
 IDMERIT_CLIENT_ID = os.environ.get("IDMERIT_CLIENT_ID")
 IDMERIT_SECRET_KEY = os.environ.get("IDMERIT_SECRET_KEY")
-IDMERIT_CALLBACK_URL = os.environ.get("IDMERIT_REDIRECT_URL")
+IDMERIT_CALLBACK_URL = os.environ.get("IDMERIT_CALLBACK_URL")
 
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = {

@@ -1029,6 +1029,7 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
 # ------------------------
 # IDMERIT Routes
 # ------------------------
+#change it so that we redirect to the backend then to frontend 
 @app.post("/idmerit/user_text")
 async def send_verification_text(request: Request, user=Depends(get_current_user)):
     '''
@@ -1058,7 +1059,7 @@ async def send_verification_text(request: Request, user=Depends(get_current_user
 @app.post("/idmerit/callback")
 async def idmerit_callback(request: Request):
     response_data = await request.json()
-
+    print(response_data)
     client_info = idmerit_fetch_clientid(response_data["requestId"])
     client_id = client_info.get("client_id")
     claims = verify_client(client_id)
