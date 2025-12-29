@@ -60,7 +60,8 @@ DOCUMENT_CATEGORIES = {
         "Tax Return",
         "Notice of Assessment",
         "Employment Contract",
-        "Employment Letter"
+        "Employment Letter",
+        "Invoices"
     ],
     "Bank & Financial Documents": [
         "Bank Statements",
@@ -95,7 +96,10 @@ DOCUMENT_CATEGORIES = {
         "Gift Letter",
         "Guarantor Documents",
         "Superannuation Statement",
-        "Utility Bills"
+        "Utility Bills",
+        "Bills",
+        "Miscellaneous or Unclassified"
+        
     ]
 }
 
