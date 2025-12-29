@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks
 # Model Imports
 # ------------------------
 from pydantic import BaseModel
-from External_APIs.basiq_api import BasiqAPI
+#from External_APIs.basiq_api import BasiqAPI
 
 # ------------------------
 # File Imports
@@ -30,6 +30,7 @@ from helpers.xero_helpers import *
 from helpers.myob_helper import *
 from cryptography.fernet import Fernet
 from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
+from helpers.sending_email import send_broker_to_client
 # ------------------------
 # Python Imports
 # ------------------------
@@ -44,7 +45,7 @@ from urllib.parse import urlencode
 # FastAPI App Initialization
 # ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
-basiq = BasiqAPI()
+#basiq = BasiqAPI()
 verification_states_shufti = {}
 REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker..dev/dashboard")
 STATE_PARAMETER = os.environ.get("STATE_SECRET_KEY")
@@ -86,6 +87,9 @@ class GoogleTokenRequest(BaseModel):
 class XeroAuthRequest(BaseModel):
     code: str
 
+
+#Work on implementing organization based login later
+#implement unit tests later
 
 # ------------------------
 # Dependencies
@@ -708,6 +712,29 @@ async def remove_document_comment(client_id: int, request: dict, user=Depends(ge
     
     return {"message": "Comment removed successfully"}
 
+@app.post("/brokers/client/{client_id}/email/send")
+def send_email_to_client(client_first_name: str, client_email: str, email_data: dict, user=Depends(get_current_user)) -> dict:
+    '''
+    Allow brokers to send emails to clients
+
+    client_id (int): The client ID to send email to.
+    email_data (dict): The email data containing subject and body.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful sending
+    '''
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
+    if not broker:
+        raise HTTPException(status_code=404, detail="Broker not found")
+
+    subject = f"Broker {user_obj['name']} invited you to sign up"
+    body = email_data.get("body", "")
+    send_broker_to_client(user_obj["name"], user_obj["email"], client_first_name, client_email, body, subject)
+    return {"message": "Email sent successfully"}
 
 # ------------------------
 # Document Routes
