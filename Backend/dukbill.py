@@ -16,7 +16,7 @@ from pydantic import BaseModel
 # ------------------------
 # File Imports
 # ------------------------
-from config import AUTH0_DOMAIN, XERO_SCOPES, EXPECTED_REPORTS_XERO, EXPECTED_REPORTS_MYOB, EXPECTED_REPORTS_IDMERIT
+from config import AUTH0_DOMAIN, XERO_SCOPES, EXPECTED_REPORTS_XERO, EXPECTED_REPORTS_MYOB, EXPECTED_REPORTS_IDMERIT, IDMERIT_CALLBACK_URL
 from auth import *
 from users import *
 from Documents.documents import *
@@ -1045,7 +1045,7 @@ async def send_verification_text(request: Request, user=Depends(get_current_user
     # Create verification request
     response = send_idmerit_verification_message(client["client_id"], data.get('phone_number'), data.get("name"), 
                                             data.get("country"), data.get("dob"), 
-                                            "https://dukbillapp.com/dashboard", "https://api.vericare.com.au/idmerit/callback")
+                                            "https://dukbillapp.com/dashboard", IDMERIT_CALLBACK_URL)
 
     if not response:
         raise HTTPException(status_code=500, detail="Failed to create verification")
