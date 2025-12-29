@@ -590,6 +590,41 @@ def delete_email_db(client_id: str, email: str) -> None:
         session.commit()
         
         return
+# ------------------------
+# IDMERIT API
+# ------------------------
+
+def save_verification_request_to_db(requestID: str, client_id: str) -> None:
+    """Save the verification request to the database"""
+    with Session(engine) as session:
+        new_verification = IDMERITVerification(
+            unique_uuid=requestID,
+            client_id=client_id
+        )
+        session.add(new_verification)
+        session.commit()
+
+def fetch_clientid_from_requestid(requestID: str) -> dict | None:
+    """Fetch the client ID associated with a given request ID"""
+    with Session(engine) as session:
+        stmt = select(IDMERITVerification).where(IDMERITVerification.unique_uuid == requestID)
+        result = session.execute(stmt).scalar_one_or_none()
+        if result:
+            return {
+                'idmerit_id': result.idmerit_id,
+                'client_id': result.client_id,
+                'unique_uuid': result.unique_uuid
+            }
+        return None
+
+def delete_row_from_requestid(requestID: str) -> None:
+    """Delete the verification request from the database"""
+    with Session(engine) as session:
+        stmt = delete(IDMERITVerification).where(IDMERITVerification.unique_uuid == requestID)
+        session.execute(stmt)
+        session.commit()
+        return
+
 '''
 # ------------------------
 # Basiq API

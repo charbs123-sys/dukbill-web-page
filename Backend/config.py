@@ -52,6 +52,10 @@ XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
 XERO_SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
 
+# --- IDMerit API Configuration ---
+IDMERIT_CLIENT_ID = os.environ.get("IDMERIT_CLIENT_ID")
+IDMERIT_SECRET_KEY = os.environ.get("IDMERIT_SECRET_KEY")
+
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = {
     "Income & Employment Documents": [
@@ -126,4 +130,11 @@ EXPECTED_REPORTS_MYOB = [
     "Broker_Sales_Summary.pdf",
     "Broker_Banking_Summary.pdf",
     "Broker_Purchases_Summary.pdf"
+]
+
+#idmerit config
+EXPECTED_REPORTS_IDMERIT = [
+    "idmerit_front_id.pdf",
+    "idmerit_back_id.pdf",
+    "idmerit_passport.pdf"
 ]

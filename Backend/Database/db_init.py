@@ -61,6 +61,12 @@ class Emails(Base):
     domain: Mapped[Optional[str]] = mapped_column(String(255))
     email_address: Mapped[Optional[str]] = mapped_column(String(255))
 
+class IDMERITVerification(Base):
+    __tablename__ = "idmerit_verification"
+    idmerit_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.client_id"), primary_key=True)
+    unique_uuid: Mapped[Optional[str]] = mapped_column(String(255))
+
 def initialize_database():
     """Create all tables if they don't exist"""
     #Base.metadata.drop_all(engine)
