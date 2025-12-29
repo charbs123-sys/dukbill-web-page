@@ -60,6 +60,7 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
     categories_map = {}
     xero_map = {}
     myob_map = {}
+    idmerit_map = {}
     for doc in all_documents:
         category = doc.get("broker_document_category", "Uncategorized")
         for heading, cat_list in DOCUMENT_CATEGORIES.items():
@@ -88,6 +89,14 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
                 "broker_comment": myob_report.get("broker_comment", "")
             })
 
+
+        for idmerit_doc in doc.get("idmerit_docs", []):
+            idmerit_map.setdefault(idmerit_doc.get("filename", ""), []).append({
+                "id": idmerit_doc.get("filename", ""),
+                "category_data": [],
+                "hashed_email": doc.get("hashed_email"),
+                "broker_comment": idmerit_doc.get("broker_comment", "")
+            })
 
     categories_present = set(doc.get("broker_document_category", "Uncategorized") for doc in all_documents)
     
@@ -136,6 +145,22 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
         headings.append({
             "heading": "MYOB Reports",
             "categories": myob_categories,
+            "missing_categories": []
+        })
+    
+    #idmerit headings
+    if idmerit_map:
+        idmerit_categories = [
+            {
+                "category_name": category_name,
+                "cards": cards
+            }
+            for category_name, cards in idmerit_map.items()
+        ]
+
+        headings.append({
+            "heading": "Identity Verification",
+            "categories": idmerit_categories,
             "missing_categories": []
         })
 
@@ -259,6 +284,14 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
             "xero_payments_report.pdf": "Payments Report",
             "xero_payroll_report.pdf": "Payroll Report",
             "xero_transactions_report.pdf": "Transactions Report",
+        }
+    elif category.startswith("idmerit_"):
+        prefix = "idmerit_docs"
+        category_label = "Identity Verification"
+        category_to_filename = {
+            "idmerit_front_id.pdf": "Front of ID",
+            "idmerit_back_id.pdf": "Back of ID",
+            "idmerit_passport.pdf": "Passport",
         }
     else:
         return []

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 # ------------------------
 # File Imports
 # ------------------------
-from config import AUTH0_DOMAIN, XERO_SCOPES, EXPECTED_REPORTS_XERO, EXPECTED_REPORTS_MYOB
+from config import AUTH0_DOMAIN, XERO_SCOPES, EXPECTED_REPORTS_XERO, EXPECTED_REPORTS_MYOB, EXPECTED_REPORTS_IDMERIT
 from auth import *
 from users import *
 from Documents.documents import *
@@ -24,11 +24,13 @@ from Database.db_init import initialize_database
 from Database.S3_utils import *
 from EmailScanners.gmail_connect import get_google_auth_url, run_gmail_scan, exchange_code_for_tokens
 from Documents.file_downloads import _first_email, _invoke_zip_lambda_for, _stream_s3_zip
-from shufti import shufti_url
+#from shufti import shufti_url
 from helpers.id_helpers import *
 from helpers.xero_helpers import *
 from helpers.myob_helper import *
+from helpers.sending_email import send_broker_to_client
 from cryptography.fernet import Fernet
+from helpers.idmerit_helpers import send_idmerit_verification_message, upload_idmerit_user_image_s3, idmerit_fetch_clientid
 #from EmailScanners.outlook_connect import get_outlook_auth_url, exchange_outlook_code_for_tokens, run_outlook_scan
 # ------------------------
 # Python Imports
@@ -44,8 +46,8 @@ from urllib.parse import urlencode
 # FastAPI App Initialization
 # ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
-basiq = BasiqAPI()
-verification_states_shufti = {}
+#basiq = BasiqAPI()
+#verification_states_shufti = {}
 REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker..dev/dashboard")
 STATE_PARAMETER = os.environ.get("STATE_SECRET_KEY")
 Encryption_function = Fernet(STATE_PARAMETER)
@@ -86,6 +88,9 @@ class GoogleTokenRequest(BaseModel):
 class XeroAuthRequest(BaseModel):
     code: str
 
+
+#Work on implementing organization based login later
+#implement unit tests later
 
 # ------------------------
 # Dependencies
@@ -341,11 +346,6 @@ async def get_client_documents(user=Depends(get_current_user)):
     #get emails, xero and myob docs
     headings = get_client_dashboard(client["client_id"], emails)
 
-    #to remove later
-    verified_headings = get_client_verified_ids_dashboard(client["client_id"], [user_obj["email"]])
-    if verified_headings:
-        headings.extend(verified_headings)
-
     return {
         "headings": headings, 
         "BrokerAccess": get_client_broker_list(client["client_id"]),
@@ -383,9 +383,9 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     documents = get_client_category_documents(client["client_id"], emails, category)
 
     #want to remove later anyways
-    if category in ["Driving License", "Id Card", "Passport"]:
-        verified_docs = get_client_verified_ids_documents(client["client_id"], [user_obj["email"]], category)
-        documents.extend(verified_docs)
+    #if category in ["Driving License", "Id Card", "Passport"]:
+    #    verified_docs = get_client_verified_ids_documents(client["client_id"], [user_obj["email"]], category)
+    #    documents.extend(verified_docs)
 
     #retrieving xero/myob documents 
     documents.extend(get_docs_general(client["client_id"], [user_obj["email"]], category))
@@ -415,6 +415,8 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
         remove_comment_docs_general(client["client_id"], hashed_user_email, category, "xero_reports")
     elif category.startswith("Broker_"):
         remove_comment_docs_general(client["client_id"], hashed_user_email, category, "myob_reports")
+    elif category.startswith("idmerit_"):
+        remove_comment_docs_general(client["client_id"], hashed_user_email, category, "idmerit_docs")
     else:
         remove_comment_client_document(client["client_id"], hashed_user_email, request.get("threadid", None))
     
@@ -547,10 +549,6 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
         emails.append({"email_address": client_user["email"]})
 
     headings = get_client_dashboard(client_id, emails)
-    verified_headings = get_client_verified_ids_dashboard(client["client_id"], [client_user["email"]])
-
-    if verified_headings:
-        headings.extend(verified_headings)
 
     return {
         "headings": headings, 
@@ -588,10 +586,6 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         emails.append({"email_address": client_user["email"]})
     
     documents = get_client_category_documents(client_id, emails, category)
-
-    if category in ["Driving License", "Id Card", "Passport"]:
-        verified_docs = get_client_verified_ids_documents(client_id, [client_user["email"]], category)
-        documents.extend(verified_docs)
 
     #retrieving xero/myob documents 
     documents.extend(get_docs_general(client["client_id"], [client_user["email"]], category))
@@ -671,6 +665,8 @@ async def add_document_comment(client_id: int, request: dict, user=Depends(get_c
         add_comment_docs_general(client_id, hashed_user_email, category, request.get("comment", ""), "xero_reports")
     elif category.startswith("Broker_"):
         add_comment_docs_general(client_id, hashed_user_email, category, request.get("comment", ""), "myob_reports")
+    elif category.startswith("idmerit_"):
+        add_comment_docs_general(client_id, hashed_user_email, category, request.get("comment", ""), "idmerit_docs")
     else:
         add_comment_client_document(client_id, hashed_user_email, category, request.get("comment", ""), request.get("threadid", None))
     
@@ -703,11 +699,36 @@ async def remove_document_comment(client_id: int, request: dict, user=Depends(ge
         remove_comment_docs_general(client_id, hashed_user_email, category, "xero_reports")
     elif category.startswith("Broker_"):
         remove_comment_docs_general(client_id, hashed_user_email, category, "myob_reports")
+    elif category.startswith("idmerit_"):
+        remove_comment_docs_general(client_id, hashed_user_email, category, "idmerit_docs")
     else:
         remove_comment_client_document(client_id, hashed_user_email, request.get("threadid", None))
     
     return {"message": "Comment removed successfully"}
 
+@app.post("/brokers/client/{client_id}/email/send")
+def send_email_to_client(client_first_name: str, client_email: str, email_data: dict, user=Depends(get_current_user)) -> dict:
+    '''
+    Allow brokers to send emails to clients
+
+    client_id (int): The client ID to send email to.
+    email_data (dict): The email data containing subject and body.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful sending
+    '''
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
+    if not broker:
+        raise HTTPException(status_code=404, detail="Broker not found")
+
+    subject = f"Broker {user_obj['name']} invited you to sign up"
+    body = email_data.get("body", "")
+    send_broker_to_client(user_obj["name"], user_obj["email"], client_first_name, client_email, body, subject)
+    return {"message": "Email sent successfully"}
 
 # ------------------------
 # Document Routes
@@ -732,8 +753,8 @@ async def edit_client_document_endpoint(
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if updates["id"].startswith("xero_") or updates["id"].startswith("Broker_"):
-        raise HTTPException(status_code=400, detail="Editing Xero or MYOB documents is not supported")
+    if updates["id"].startswith("xero_") or updates["id"].startswith("Broker_") or updates["id"].startswith("idmerit_"):
+        raise HTTPException(status_code=400, detail="Editing Xero, MYOB, or Identity Verification documents is not supported")
 
     hashed_email = updates.pop("hashed_email", None)
     if not hashed_email:
@@ -767,13 +788,9 @@ async def delete_client_document_endpoint(
     if not threadid or not hashed_email:
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
     
-    #will delete this later
-    # Known identity document types
-    identity_doc_types = ["driving_license", "id_card", "passport"]
-    
     # Check if it's a verified identity document by checking the id
-    if threadid in identity_doc_types:
-        delete_client_document_identity(threadid, hashed_email)
+    if threadid.startswith("idmerit_"):
+        delete_docs_general(threadid, hashed_email, "idmerit_docs")
     # Check if it's a Xero report
     elif threadid.startswith("xero_"):
         delete_docs_general(threadid, hashed_email, "xero_reports")
@@ -1010,8 +1027,59 @@ async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_c
     return {"transactions": transactions}
 '''
 # ------------------------
-# Shufti
+# IDMERIT Routes
 # ------------------------
+@app.post("/idmerit/user_text")
+async def send_verification_text(request: Request, user=Depends(get_current_user)):
+    '''
+    
+    '''
+    data = await request.json()
+    claims, token = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    client = find_client(user_obj["user_id"])
+
+    # Create verification request
+    response = send_idmerit_verification_message(client["client_id"], data.get('phone_number'), data.get("name"), 
+                                            data.get("country"), data.get("dob"), 
+                                            "https://dukbillapp.com/dashboard", "https://api.vericare.com.au/idmerit/callback")
+
+    if not response:
+        raise HTTPException(status_code=500, detail="Failed to create verification")
+    
+
+    return {
+        "message": "Verification text sent"
+    }
+
+@app.post("/idmerit/callback")
+async def idmerit_callback(request: Request):
+    response_data = await request.json()
+
+    client_info = idmerit_fetch_clientid(response_data["requestId"])
+    client_id = client_info.get("client_id")
+    claims = verify_client(client_id)
+    
+    user_id = claims.get("user_id")
+    user_obj = verify_user_by_id(user_id)
+    hashed_email = hash_email(user_obj["email"])
+
+    if response_data.get("status") == "verified":
+        upload_idmerit_user_image_s3(response_data.get("scanImage"), response_data.get("scanImageBack"), hashed_email, response_data.get("documentType"))
+
+        update_anonymized_json_general(hashed_email, "idmerit_docs", EXPECTED_REPORTS_IDMERIT)
+
+        return {"status": "User verified successfully"}
+
+    return {"status": "User verification failed"}
+
+
+
+
+'''
 @app.post("/shufti/user_redirect")
 async def shufti_redirect(user=Depends(get_current_user)):
     #going to delete later
@@ -1094,7 +1162,7 @@ async def notify_callback(request: Request):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+'''
 # ------------------------
 # Xero Routes
 # ------------------------

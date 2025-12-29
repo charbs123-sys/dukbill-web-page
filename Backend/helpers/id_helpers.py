@@ -1,3 +1,4 @@
+'''
 import hashlib
 #from dukbill import verification_states_shufti
 from shufti import shufti_url, get_verification_status_with_proofs, download_proof_image
@@ -105,3 +106,4 @@ def handle_verification_declined(user_id: str, response_data: dict):
     declined_reason = response_data.get('declined_reason', 'Unknown')
     print(f"Reason: {declined_reason}")
     # TODO: Update database with declined status
+'''

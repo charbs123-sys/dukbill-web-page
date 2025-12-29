@@ -144,7 +144,22 @@ def upload_pdf_to_s3(buffer, hashed_email, filename):
     except ClientError as e:
         raise
 
-
+def upload_id_to_s3(file_obj, s3_key) -> bool:
+    """
+    Uploads a file object to S3.
+    """
+    try:
+        s3.upload_fileobj(
+            file_obj,
+            bucket_name,
+            s3_key,
+            ExtraArgs={'ContentType': 'application/pdf'}
+        )
+        print(f"Successfully uploaded: {s3_key}")
+        return True
+    except ClientError as e:
+        print(f"Failed to upload {s3_key}: {e}")
+        return False
 
 def upload_myob_pdf_to_s3(pdf_bytes, hashed_email, filename):
     """Upload PDF bytes to S3"""
