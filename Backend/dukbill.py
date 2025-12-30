@@ -534,16 +534,22 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
         dict: Client dashboard information {headings: [...], BrokerAccess: [...], loginEmail: ...}
     '''
     claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
     client = verify_client(client_id)
     if not client:
         return {"error": "Access denied"}
     client_user = get_user_from_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
-    print(f"this is broker access status - {is_broker_access}")
-    if not is_broker_access[0].get("brokerAccess", True):
-        return {"error": "Access denied"}
+
+    #find the broker and determine if they have access
+    for client_brokers in is_broker_access:
+        if client_brokers.get('broker_id') == broker['broker_id'] and not client_brokers.get('brokerAccess', False):
+            return {"error": "Access denied"}
+
     emails = get_client_emails(client_id)
-    print("emails fetched for dashboard:", emails)
+
     # Extract email addresses for comparison
     email_addresses = [e["email_address"] for e in emails]
 
@@ -552,7 +558,7 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
         emails.append({"email_address": client_user["email"]})
 
     headings = get_client_dashboard(client_id, emails)
-    print("headings fetched for dashboard:", headings)
+
     return {
         "headings": headings, 
         "BrokerAccess": is_broker_access,
@@ -572,10 +578,15 @@ async def get_category_documents_broker(client_id: int, request: dict, user=Depe
         list: List of documents in the specified category
     '''
     claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
     client = verify_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
-    if not is_broker_access[0].get("brokerAccess", True):
-        return {"error": "Access denied"}
+
+    for client_brokers in is_broker_access:
+        if client_brokers.get('broker_id') == broker['broker_id'] and not client_brokers.get('brokerAccess', False):
+            return {"error": "Access denied"}
     
     category = request.get("category")
     client_user = get_user_from_client(client_id)
@@ -607,10 +618,14 @@ async def download_client_documents(client_id: int, user=Depends(get_current_use
         StreamingResponse: The streaming response containing the zip file.
     '''
     claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
     client = verify_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
-    if not is_broker_access[0].get("brokerAccess", True):
-        return {"error": "Access denied"}
+    for client_brokers in is_broker_access:
+        if client_brokers.get('broker_id') == broker['broker_id'] and not client_brokers.get('brokerAccess', False):
+            return {"error": "Access denied"}
 
     client_user = get_user_from_client(client_id)
     emails = get_client_emails(client_id)
@@ -655,9 +670,13 @@ async def add_document_comment(client_id: int, request: dict, user=Depends(get_c
     '''
     claims, _ = user
     client = verify_client(client_id)
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
     is_broker_access = get_client_broker_list(client["client_id"])
-    if not is_broker_access[0].get("brokerAccess", True):
-        return {"error": "Access denied"}
+    for client_brokers in is_broker_access:
+        if client_brokers.get('broker_id') == broker['broker_id'] and not client_brokers.get('brokerAccess', False):
+            return {"error": "Access denied"}
     
     category = request.get("category")
     client_user = get_user_from_client(client_id)
@@ -689,9 +708,13 @@ async def remove_document_comment(client_id: int, request: dict, user=Depends(ge
     '''
     claims, _ = user
     client = verify_client(client_id)
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    broker = find_broker(user_obj["user_id"])
     is_broker_access = get_client_broker_list(client["client_id"])
-    if not is_broker_access[0].get("brokerAccess", True):
-        return {"error": "Access denied"}
+    for client_brokers in is_broker_access:
+        if client_brokers.get('broker_id') == broker['broker_id'] and not client_brokers.get('brokerAccess', False):
+            return {"error": "Access denied"}
     
     category = request.get("category")
     client_user = get_user_from_client(client_id)
