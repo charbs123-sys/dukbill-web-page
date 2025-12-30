@@ -414,7 +414,8 @@ def get_brokers_for_client(client_id: str) -> list:
                 Brokers.broker_id,
                 Users.name,
                 Users.picture,
-                ClientBroker.brokerAccess
+                ClientBroker.brokerAccess,
+                ClientBroker.broker_verify,
             )
             .join(ClientBroker, Brokers.broker_id == ClientBroker.broker_id)
             .join(Users, Brokers.user_id == Users.user_id)
@@ -429,7 +430,8 @@ def get_brokers_for_client(client_id: str) -> list:
                 'broker_id': row.broker_id,
                 'name': row.name,
                 'picture': row.picture,
-                'brokerAccess': row.brokerAccess
+                'brokerAccess': row.brokerAccess,
+                'broker_verify': row.broker_verify
             })
 
         return brokers

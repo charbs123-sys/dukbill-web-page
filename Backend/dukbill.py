@@ -92,7 +92,6 @@ class XeroAuthRequest(BaseModel):
 #Work on implementing organization based login later
 #implement unit tests later
 #implement rate limiting later
-#make client see broker verify documents
 
 # ------------------------
 # Dependencies
@@ -462,8 +461,8 @@ async def get_brokers(user=Depends(get_current_user)) -> list:
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])    
-
-    return get_client_brokers(client["client_id"])
+    get_broker_info = get_client_brokers(client["client_id"])
+    return get_broker_info  
     
 @app.post("/broker/access")
 async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_user)) -> dict:
@@ -652,7 +651,18 @@ async def verify_client_documents(client_id: int, user=Depends(get_current_user)
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
     
+
     broker_verify = toggle_client_verification(client_id, broker["broker_id"])
+    if broker_verify:
+        send_broker_to_client(
+            broker_name=user_obj["name"],
+            broker_email=user_obj["email"],
+            client_first_name=get_user_from_client(client_id)["name"],
+            client_email=get_user_from_client(client_id)["email"],
+            msg_contents="Your documents have been successfully verified.",
+            msg_type="verification_success",
+            subject="Document Verification Success"
+        )
     return {"broker_verify": broker_verify}
 
 #see if we can get threadid as well if it exists on a file
@@ -753,7 +763,7 @@ def send_email_to_client(client_first_name: str, client_email: str, email_data: 
 
     subject = f"Broker {user_obj['name']} invited you to sign up"
     body = email_data.get("body", "")
-    send_broker_to_client(user_obj["name"], user_obj["email"], client_first_name, client_email, body, subject)
+    send_broker_to_client(user_obj["name"], user_obj["email"], client_first_name, client_email, body, "onboarding", subject)
     return {"message": "Email sent successfully"}
 
 # ------------------------
