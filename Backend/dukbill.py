@@ -652,7 +652,18 @@ async def verify_client_documents(client_id: int, user=Depends(get_current_user)
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
     
+
     broker_verify = toggle_client_verification(client_id, broker["broker_id"])
+    if broker_verify:
+        send_broker_to_client(
+            broker_name=user_obj["name"],
+            broker_email=user_obj["email"],
+            client_first_name=get_user_from_client(client_id)["name"],
+            client_email=get_user_from_client(client_id)["email"],
+            msg_contents="Your documents have been successfully verified.",
+            msg_type="verification_success",
+            subject="Document Verification Success"
+        )
     return {"broker_verify": broker_verify}
 
 #see if we can get threadid as well if it exists on a file
@@ -753,7 +764,7 @@ def send_email_to_client(client_first_name: str, client_email: str, email_data: 
 
     subject = f"Broker {user_obj['name']} invited you to sign up"
     body = email_data.get("body", "")
-    send_broker_to_client(user_obj["name"], user_obj["email"], client_first_name, client_email, body, subject)
+    send_broker_to_client(user_obj["name"], user_obj["email"], client_first_name, client_email, body, "onboarding", subject)
     return {"message": "Email sent successfully"}
 
 # ------------------------
