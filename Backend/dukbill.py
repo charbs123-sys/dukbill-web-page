@@ -91,6 +91,8 @@ class XeroAuthRequest(BaseModel):
 
 #Work on implementing organization based login later
 #implement unit tests later
+#implement rate limiting later
+#make client see broker verify documents
 
 # ------------------------
 # Dependencies
@@ -537,10 +539,11 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
         return {"error": "Access denied"}
     client_user = get_user_from_client(client_id)
     is_broker_access = get_client_broker_list(client["client_id"])
+    print(f"this is broker access status - {is_broker_access}")
     if not is_broker_access[0].get("brokerAccess", True):
         return {"error": "Access denied"}
     emails = get_client_emails(client_id)
-
+    print("emails fetched for dashboard:", emails)
     # Extract email addresses for comparison
     email_addresses = [e["email_address"] for e in emails]
 
@@ -549,7 +552,7 @@ async def get_client_dashboard_broker(client_id: int, user=Depends(get_current_u
         emails.append({"email_address": client_user["email"]})
 
     headings = get_client_dashboard(client_id, emails)
-
+    print("headings fetched for dashboard:", headings)
     return {
         "headings": headings, 
         "BrokerAccess": is_broker_access,
