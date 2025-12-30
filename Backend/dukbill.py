@@ -72,7 +72,7 @@ app.add_middleware(
 )
 
 # Initialize database
-# initialize_database()
+initialize_database()
 
 # Security dependency
 security = HTTPBearer()
