@@ -39,6 +39,7 @@ CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
 BASIQ_API_KEY = os.environ.get("BASIQ_API_KEY")
 BASIQ_BASE_URL = os.environ.get("BASIQ_BASE_URL")
 '''
+
 # --- Gmail API Configuration ---
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
@@ -51,6 +52,26 @@ XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
 XERO_SCOPES = "offline_access accounting.settings.read accounting.transactions.read accounting.contacts.read accounting.attachments.read accounting.reports.read payroll.employees.read payroll.payruns.read payroll.payslip.read"
+
+EXPECTED_REPORTS_XERO = [
+    "xero_accounts_report.pdf",
+    "xero_bank_transfers_report.pdf",
+    "xero_credit_notes_report.pdf",
+    "xero_financial_reports.pdf",
+    "xero_invoices_report.pdf",
+    "xero_payments_report.pdf",
+    "xero_payroll_report.pdf",
+    "xero_transactions_report.pdf"
+]
+
+# --- MYOB API Configuration ---
+EXPECTED_REPORTS_MYOB = [
+    "Broker_Payroll_Summary.pdf",
+    "Broker_Sales_Summary.pdf",
+    "Broker_Banking_Summary.pdf",
+    "Broker_Purchases_Summary.pdf"
+]
+
 
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = {
@@ -102,28 +123,3 @@ DOCUMENT_CATEGORIES = {
         
     ]
 }
-
-
-#
-# Xero Config
-#
-
-EXPECTED_REPORTS_XERO = [
-    "xero_accounts_report.pdf",
-    "xero_bank_transfers_report.pdf",
-    "xero_credit_notes_report.pdf",
-    "xero_financial_reports.pdf",
-    "xero_invoices_report.pdf",
-    "xero_payments_report.pdf",
-    "xero_payroll_report.pdf",
-    "xero_transactions_report.pdf"
-]
-
-#myob config
-
-EXPECTED_REPORTS_MYOB = [
-    "Broker_Payroll_Summary.pdf",
-    "Broker_Sales_Summary.pdf",
-    "Broker_Banking_Summary.pdf",
-    "Broker_Purchases_Summary.pdf"
-]

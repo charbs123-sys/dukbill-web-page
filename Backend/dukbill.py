@@ -44,7 +44,7 @@ from urllib.parse import urlencode
 # FastAPI App Initialization
 # ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
-basiq = BasiqAPI()
+# basiq = BasiqAPI()
 verification_states_shufti = {}
 REDIRECT_URL = os.environ.get("REDIRECT_DUKBILL", "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker..dev/dashboard")
 STATE_PARAMETER = os.environ.get("STATE_SECRET_KEY")
@@ -204,8 +204,14 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         profile_id = profile["client_id"]
         user_type = "client"
 
-    return {"name": user_obj["name"], "id": profile_id, "picture": user_obj["picture"], "user_type": user_type, "email_verified": jwt_info["email_verified"]}
-
+    return {
+        "name": user_obj["name"],
+        "id": profile_id,
+        "picture": user_obj["picture"],
+        "user_type": user_type,
+        "email_verified": jwt_info["email_verified"]
+    }
+    
 @app.patch("/users/onboarding")
 async def complete_profile(profile_data: dict, user=Depends(get_current_user)) -> dict:
     '''
