@@ -92,7 +92,6 @@ class XeroAuthRequest(BaseModel):
 #Work on implementing organization based login later
 #implement unit tests later
 #implement rate limiting later
-#make client see broker verify documents
 
 # ------------------------
 # Dependencies
@@ -462,8 +461,8 @@ async def get_brokers(user=Depends(get_current_user)) -> list:
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])    
-
-    return get_client_brokers(client["client_id"])
+    get_broker_info = get_client_brokers(client["client_id"])
+    return get_broker_info  
     
 @app.post("/broker/access")
 async def toggle_broker_access_route(broker_id: str, user=Depends(get_current_user)) -> dict:
