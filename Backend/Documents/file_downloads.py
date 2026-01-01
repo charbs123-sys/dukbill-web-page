@@ -1,6 +1,7 @@
-import os
 import json
-from typing import List, Dict, Any
+import os
+from typing import Any, List
+
 import boto3
 from botocore.config import Config as BotoConfig
 from fastapi import HTTPException
@@ -21,6 +22,7 @@ _lambda_cfg = BotoConfig(
 )
 lambda_client = boto3.client("lambda", config=_lambda_cfg)
 
+
 def _first_email(raw: List[Any]) -> str:
     if not raw:
         raise HTTPException(status_code=404, detail="No emails found for client")
@@ -30,6 +32,7 @@ def _first_email(raw: List[Any]) -> str:
     if isinstance(v, str) and v.strip():
         return v.strip()
     raise HTTPException(status_code=400, detail="Invalid email format")
+
 
 def _invoke_zip_lambda_for(emails: List[str]) -> dict:
     """
@@ -42,8 +45,8 @@ def _invoke_zip_lambda_for(emails: List[str]) -> dict:
     """
     # Prepare payload - Lambda expects {"emails": ["email1", "email2", ...]}
     payload_data = {"emails": emails}
-    
-    #invoke the lambda function
+
+    # invoke the lambda function
     resp = lambda_client.invoke(
         FunctionName=ZIP_LAMBDA_NAME,
         InvocationType="RequestResponse",
@@ -52,10 +55,10 @@ def _invoke_zip_lambda_for(emails: List[str]) -> dict:
     payload = resp["Payload"].read().decode("utf-8")
 
     try:
-        env = json.loads(payload) 
+        env = json.loads(payload)
     except Exception:
         raise HTTPException(status_code=502, detail="Invalid response from ZIP Lambda")
-    
+
     # Check Lambda response
     code = env.get("statusCode")
     body_raw = env.get("body")
@@ -63,12 +66,15 @@ def _invoke_zip_lambda_for(emails: List[str]) -> dict:
     if code == 200 and "zip_key" in body:
         return body
     if code == 404:
-        raise HTTPException(status_code=404, detail="No PDFs found for the provided emails")
+        raise HTTPException(
+            status_code=404, detail="No PDFs found for the provided emails"
+        )
     err = body.get("error") if isinstance(body, dict) else "ZIP Lambda error"
     raise HTTPException(status_code=502, detail=f"Lambda failed: {err}")
 
+
 def _stream_s3_zip(key: str, download_name: str) -> StreamingResponse:
-    '''
+    """
     Send a ZIP file from S3 as a streaming response
 
     key (str): The S3 object key for the ZIP file.
@@ -76,17 +82,19 @@ def _stream_s3_zip(key: str, download_name: str) -> StreamingResponse:
 
     Returns:
         StreamingResponse: The streaming response containing the ZIP file.
-    '''
+    """
     try:
         obj = s3.get_object(Bucket=ZIP_BUCKET, Key=key)
     except s3.exceptions.NoSuchKey:
         raise HTTPException(status_code=404, detail="ZIP not found in S3")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"S3 error: {e}")
+
     def it():
         for chunk in obj["Body"].iter_chunks(chunk_size=1024 * 1024):
             if chunk:
                 yield chunk
+
     return StreamingResponse(
         it(),
         media_type="application/zip",

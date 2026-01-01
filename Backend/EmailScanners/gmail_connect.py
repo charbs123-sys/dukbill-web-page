@@ -1,16 +1,15 @@
-import os
 import json
+import os
 import time
-import requests
-import uuid
-from typing import Optional, List
-from datetime import datetime, UTC  # timezone-aware
-from urllib.parse import urlencode
-from fastapi import BackgroundTasks
-from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES, SEARCH_QUERY
-import urllib.request
 import urllib.error
+import urllib.request
+import uuid
+from datetime import UTC, datetime
+from typing import List, Optional
+from urllib.parse import urlencode
 
+import requests
+from config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SEARCH_QUERY
 from helpers.helper import get_email_domain
 from users import client_add_email
 
@@ -23,18 +22,18 @@ SCOPES = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.
 USERINFO_V2 = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
-
-
 # ===== Token helpers =====
 def save_tokens(tokens: dict) -> None:
     with open(TOKENS_FILE, "w", encoding="utf-8") as f:
         json.dump(tokens, f, indent=2)
+
 
 def load_tokens() -> Optional[dict]:
     if not os.path.exists(TOKENS_FILE):
         return None
     with open(TOKENS_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def refresh_access_token(refresh_token: str) -> dict:
     data = {
@@ -48,7 +47,9 @@ def refresh_access_token(refresh_token: str) -> dict:
     new_payload = r.json()
     tokens = load_tokens() or {}
     tokens.update(new_payload)
-    tokens["expires_at"] = int(time.time()) + int(new_payload.get("expires_in", 3600)) - 30
+    tokens["expires_at"] = (
+        int(time.time()) + int(new_payload.get("expires_in", 3600)) - 30
+    )
     save_tokens(tokens)
     return tokens
 
@@ -64,11 +65,11 @@ def get_valid_access_token() -> Optional[str]:
         tokens = refresh_access_token(rt)
     return tokens.get("access_token")
 
+
 def fetch_authorized_email(access_token: str) -> str | None:
     """Returns the Google account email tied to this access_token."""
     req = urllib.request.Request(
-        USERINFO_V2,
-        headers={"Authorization": f"Bearer {access_token}"}
+        USERINFO_V2, headers={"Authorization": f"Bearer {access_token}"}
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -82,11 +83,14 @@ def fetch_authorized_email(access_token: str) -> str | None:
         print(f"ℹ️  UserInfo error: {e}")
     return None
 
+
 # ===== Gmail query =====
-def list_all_thread_ids(access_token: str, query: str, max_results: int = 500) -> List[str]:
-    '''
+def list_all_thread_ids(
+    access_token: str, query: str, max_results: int = 500
+) -> List[str]:
+    """
     Find all threadids in the last 2 years for an associated gmail account
-    '''
+    """
     headers = {"Authorization": f"Bearer {access_token}"}
     params = {"q": query, "maxResults": max_results}
     thread_ids: List[str] = []
@@ -99,7 +103,9 @@ def list_all_thread_ids(access_token: str, query: str, max_results: int = 500) -
             if "refresh_token" in tokens:
                 refresh_access_token(tokens["refresh_token"])
                 headers["Authorization"] = f"Bearer {get_valid_access_token()}"
-                r = requests.get(GMAIL_THREADS_URL, headers=headers, params=params, timeout=30)
+                r = requests.get(
+                    GMAIL_THREADS_URL, headers=headers, params=params, timeout=30
+                )
         r.raise_for_status()
         data = r.json()
 
@@ -114,6 +120,7 @@ def list_all_thread_ids(access_token: str, query: str, max_results: int = 500) -
 
     return sorted(set(thread_ids))
 
+
 # ===== Post batches =====
 def post_batches_to_api(
     url: str,
@@ -124,9 +131,9 @@ def post_batches_to_api(
     warnings: List[str],
     is_complete: bool,
 ) -> None:
-    '''
+    """
     Sending jobs to SQS for AWS Lambda to process
-    '''
+    """
     # Why chunking: avoid oversized payloads/timeouts downstream.
     job_id = str(uuid.uuid4())
     max_batches = 3
@@ -164,6 +171,7 @@ def post_batches_to_api(
             print("  ❌ Error:", r.text)
         time.sleep(1)
 
+
 def exchange_code_for_tokens(code: str) -> dict:
     """Exchange the Google OAuth code for access & refresh tokens."""
     data = {
@@ -180,9 +188,12 @@ def exchange_code_for_tokens(code: str) -> dict:
     # save_tokens(tokens)  # optional persistence
     return tokens  # includes 'refresh_token' when Google returns it
 
+
 # ===== Gmail scan =====
-def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_token: Optional[str]) -> None:
-    '''
+def run_gmail_scan(
+    client_id: str, user_email: str, access_token: str, refresh_token: Optional[str]
+) -> None:
+    """
     Run the gmail scan lambda function
 
     client_id (str): The client ID to associate emails with.
@@ -192,7 +203,7 @@ def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_t
 
     Returns:
         None
-    '''
+    """
     if not CLIENT_ID or not CLIENT_SECRET:
         raise RuntimeError("Missing CLIENT_ID/CLIENT_SECRET")
     if not access_token:
@@ -203,19 +214,20 @@ def run_gmail_scan(client_id: str, user_email: str, access_token: str, refresh_t
 
     print(f"✅ Found {len(thread_ids)} threads for {user_email}")
     client_add_email(client_id, get_email_domain(user_email), user_email)
-    
+
     warnings: List[str] = []
     is_complete = True
     url = "https://z1c3olnck5.execute-api.ap-southeast-2.amazonaws.com/Prod/"
-    post_batches_to_api(url, thread_ids, access_token, refresh_token, user_email, warnings, is_complete)
-
+    post_batches_to_api(
+        url, thread_ids, access_token, refresh_token, user_email, warnings, is_complete
+    )
 
 
 # ===== OAuth redirect URL =====
 def get_google_auth_url(state: str) -> str:
-    '''
+    """
     Creating the google redirect url
-    '''
+    """
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -227,5 +239,3 @@ def get_google_auth_url(state: str) -> str:
         "state": state,
     }
     return f"{AUTH_URL}?{urlencode(params)}"
-
-

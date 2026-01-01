@@ -72,7 +72,7 @@ def decode_gmail_base64_to_bytes(s: str) -> bytes:
 
     try:
         return base64.urlsafe_b64decode(s_clean)
-    except Exception as e:
+    except Exception:
         # As a fallback, try converting urlsafe to standard and decode
         try:
             standard = s_clean.replace('-', '+').replace('_', '/')
@@ -199,7 +199,7 @@ class Database:
             )
             self.s3_client = session.create_client('s3', 'ap-southeast-2', config=config)
             logger.info("[Database] S3 client created")
-        except Exception as e:
+        except Exception:
             logger.exception("Failed creating S3 client")
             raise
 

@@ -139,7 +139,7 @@ class Person():
             single_page_bytes, extract_success = self._extract_first_page_to_bytes(pdf_bytes)
             
             if not extract_success or single_page_bytes is None:
-                print(f"[Textract] Failed to extract first page")
+                print("[Textract] Failed to extract first page")
                 return "[Error: Could not extract first page from PDF]"
             
             # Use the single-page PDF for Textract
@@ -150,7 +150,7 @@ class Person():
                 return "[Error: PDF exceeds Textract's 10MB limit for synchronous processing]"
             
             if not pdf_to_process.startswith(b'%PDF-'):
-                print(f"[Textract Validation Failed]: File does not have valid PDF header")
+                print("[Textract Validation Failed]: File does not have valid PDF header")
                 return "[Error: Invalid PDF format - missing PDF header]"
             
             if len(pdf_to_process) < 100:
@@ -206,7 +206,7 @@ class Person():
                 print(f"[Textract ✓] Extracted {char_count} characters from first page")
                 return result
             else:
-                print(f"[Textract] No text found on first page")
+                print("[Textract] No text found on first page")
                 return "[Textract: No text found on first page]"
             
         except ClientError as e:
@@ -315,7 +315,7 @@ class Person():
                                         # Extreme mode: only use Textract if we got ZERO chars
                                         should_use_textract = False
                                         extracted_text_content = text
-                                        print(f"[Smart Skip] Using minimal fitz text, skipping Textract")
+                                        print("[Smart Skip] Using minimal fitz text, skipping Textract")
                                     elif self.smart_textract and char_count > 5:
                                         # Smart mode: skip Textract if we got at least SOME text
                                         should_use_textract = False

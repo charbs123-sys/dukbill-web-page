@@ -11,12 +11,11 @@ import os
 import re
 import json
 import gzip
-import time
 import base64
 import logging
 import random
 import asyncio
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -50,7 +49,7 @@ def decode_gmail_base64_to_bytes(s: str) -> bytes:
 
     try:
         return base64.urlsafe_b64decode(s_clean)
-    except Exception as e:
+    except Exception:
         try:
             standard = s_clean.replace('-', '+').replace('_', '/')
             return base64.b64decode(standard)
@@ -169,7 +168,7 @@ class Database:
             )
             self.s3_client = session.create_client('s3', 'ap-southeast-2', config=config)
             logger.info("[Database] S3 client created")
-        except Exception as e:
+        except Exception:
             logger.exception("Failed creating S3 client")
             raise
 

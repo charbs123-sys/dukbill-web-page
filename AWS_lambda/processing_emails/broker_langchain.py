@@ -1,7 +1,6 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field, model_validator
 from langchain_core.prompts import ChatPromptTemplate
-import asyncio
 from openai import RateLimitError
 from datetime import datetime, timedelta
 import time
@@ -198,7 +197,7 @@ def process_true_batch(email_batch, structured_llm, max_retries=5):
     for attempt in range(max_retries):
         try:
             return structured_llm.invoke(prompt)
-        except RateLimitError as e:
+        except RateLimitError:
             wait_time = 2 ** attempt
             print(f"[Retry {attempt + 1}] RateLimitError: Waiting {wait_time}s")
             time.sleep(wait_time)

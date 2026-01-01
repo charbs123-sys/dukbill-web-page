@@ -3,9 +3,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from email.mime.application import MIMEApplication
-import os
-from email.mime.application import MIMEApplication  # ✅ class import
-import os
 
 def send_email(to_email, subject, html_content, old=True, pdf_path=None, zip_path=None):
     from_email = os.getenv("EMAIL_ADDRESS")

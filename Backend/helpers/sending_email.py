@@ -1,11 +1,12 @@
 import os
 import smtplib
-from email.message import EmailMessage
 from datetime import date
+from email.message import EmailMessage
 
 PRIMARY = "#16a085"  # Accent color you can tweak
 BG_BADGE = "#e6f7f3"
 TEXT_DARK = "#0f172a"
+
 
 def dukbill_style_html(
     broker_name: str,
@@ -23,6 +24,7 @@ def dukbill_style_html(
     - Card text: #0f172a / #334155
     - Subtle grays: #6b7280, #9ca3af, divider #e5e7eb
     """
+
     # Safe escape for HTML
     def esc(s: str) -> str:
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -54,10 +56,14 @@ def dukbill_style_html(
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="left">
-                    <span style="display:inline-block;font-weight:700;font-size:18px;letter-spacing:0.2px;color:#0f172a;">{final_headline}</span>
+                    <span style="display:inline-block;font-weight:700;font-size:18px;letter-spacing:0.2px;color:#0f172a;">{
+        final_headline
+    }</span>
                   </td>
                   <td align="right">
-                    <span style="display:inline-block;font-size:12px;color:#6b7280;">{today}</span>
+                    <span style="display:inline-block;font-size:12px;color:#6b7280;">{
+        today
+    }</span>
                   </td>
                 </tr>
               </table>
@@ -70,13 +76,17 @@ def dukbill_style_html(
 
                 <tr>
                   <td style="padding:12px 0 4px 0;">
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">Hi {esc(client_first_name)},</p>
+                    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">Hi {
+        esc(client_first_name)
+    },</p>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="padding:8px 0 12px 0;">
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">{esc(msg_contents).replace('\\n','<br>')}</p>
+                    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">{
+        esc(msg_contents).replace("\\n", "<br>")
+    }</p>
                   </td>
                 </tr>
 
@@ -90,11 +100,15 @@ def dukbill_style_html(
                   </td>
                 </tr>
 
-                {f"""<tr>
+                {
+        f'''<tr>
                   <td style="padding-top:20px;">
                     <a href="{esc(cta_url)}" style="display:inline-block;background-color:#ff6b15;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600;font-size:14px;">View Details</a>
                   </td>
-                </tr>""" if cta_url else ""}
+                </tr>'''
+        if cta_url
+        else ""
+    }
 
                 <tr>
                   <td style="padding-top:20px;">
@@ -114,7 +128,9 @@ def dukbill_style_html(
 
           <tr>
             <td align="center" style="padding:20px 8px 0 8px;">
-              <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.6;">© {year} Your Company. All rights reserved.</p>
+              <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.6;">© {
+        year
+    } Your Company. All rights reserved.</p>
             </td>
           </tr>
 
@@ -125,6 +141,7 @@ def dukbill_style_html(
 </body>
 </html>"""
     return html
+
 
 def send_broker_to_client(
     broker_name: str,
@@ -185,8 +202,7 @@ def send_broker_to_client(
     except Exception as e:
         print(f"Failed to send email: {e}")
         return False
-    
-  
+
 
 def dukbill_verification_success_html(
     broker_name: str,
@@ -197,6 +213,7 @@ def dukbill_verification_success_html(
     """
     Generates a Dukbill-style HTML email specifically for successful document verification.
     """
+
     # Safe escape for HTML
     def esc(s: str) -> str:
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

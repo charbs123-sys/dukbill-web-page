@@ -3,7 +3,6 @@ MYOB Token Refresh
 """
 
 import requests
-import json
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -67,7 +66,7 @@ def refresh_access_token(client_id, client_secret, refresh_token):
         print(f"\nTimestamp: {datetime.now()}")
         return tokens
     else:
-        print(f"\n✗ Error refreshing token:")
+        print("\n✗ Error refreshing token:")
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text}")
         return None

@@ -11,13 +11,11 @@ from googleapiclient.discovery import build
 import ssl
 import socket
 from bs4 import BeautifulSoup
-import base64
 import re
 from datetime import datetime, timedelta
 import os
 import botocore.session
 import gzip
-import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -510,7 +508,7 @@ class GmailEmailCollector:
                         
                         # Check for EOF marker
                         if b'%%EOF' not in pdf_bytes[-100:]:
-                            logger.warning(f"PDF may be truncated - no %%EOF found in last 100 bytes")
+                            logger.warning("PDF may be truncated - no %%EOF found in last 100 bytes")
                         
                         logger.info(f"✓ Successfully downloaded PDF: {attachment.filename} ({len(pdf_bytes)} bytes)")
                         
@@ -534,7 +532,7 @@ class GmailEmailCollector:
                         logger.error(f"All decode attempts failed for PDF: {attachment.filename}")
                         return None
                 else:
-                    logger.error(f"No 'data' field in attachment response")
+                    logger.error("No 'data' field in attachment response")
                     return None
                         
             except (ssl.SSLError, socket.timeout) as e:
@@ -793,8 +791,6 @@ def save_pdfs_to_disk(threads_dict, output_dir="pdfs"):
     Returns:
         List of saved file paths
     """
-    import os
-    from datetime import datetime
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -856,8 +852,8 @@ def save_pdfs_to_disk(threads_dict, output_dir="pdfs"):
                                 try:
                                     pdf_bytes = base64.b64decode(pdf_data)
                                     decode_method = "direct b64decode"
-                                except Exception as e4:
-                                    print(f"    All decode methods failed!")
+                                except Exception:
+                                    print("    All decode methods failed!")
                                     failed_pdfs.append({
                                         'filename': pdf_name,
                                         'thread_id': thread_id,
@@ -867,7 +863,7 @@ def save_pdfs_to_disk(threads_dict, output_dir="pdfs"):
                     
                     # Validate PDF
                     if not pdf_bytes:
-                        print(f"    ERROR: No bytes decoded")
+                        print("    ERROR: No bytes decoded")
                         continue
                         
                     print(f"    Decoded using: {decode_method}")
@@ -891,7 +887,7 @@ def save_pdfs_to_disk(threads_dict, output_dir="pdfs"):
                     
                     # Check for EOF
                     if b'%%EOF' not in pdf_bytes:
-                        print(f"    WARNING: PDF may be truncated (no %%EOF marker)")
+                        print("    WARNING: PDF may be truncated (no %%EOF marker)")
                     else:
                         eof_pos = pdf_bytes.rfind(b'%%EOF')
                         print(f"    %%EOF found at position {eof_pos}/{len(pdf_bytes)}")
@@ -964,7 +960,7 @@ def test_pdf_decode(b64_string):
     """
     import base64
     
-    print(f"Testing PDF decode...")
+    print("Testing PDF decode...")
     print(f"Input length: {len(b64_string)} chars")
     print(f"First 50 chars: {b64_string[:50]}")
     print(f"Last 50 chars: {b64_string[-50:]}")
@@ -974,7 +970,7 @@ def test_pdf_decode(b64_string):
     # Test 1: URL-safe decode (Gmail's format)
     try:
         pdf_bytes = base64.urlsafe_b64decode(b64_string)
-        print(f"\n✓ Method 1 (urlsafe_b64decode): Success")
+        print("\n✓ Method 1 (urlsafe_b64decode): Success")
         print(f"  Size: {len(pdf_bytes)} bytes")
         print(f"  Header: {pdf_bytes[:8]}")
         print(f"  Footer: {pdf_bytes[-20:]}")
@@ -988,7 +984,7 @@ def test_pdf_decode(b64_string):
     try:
         padded = b64_string + '=' * (4 - len(b64_string) % 4)
         pdf_bytes = base64.urlsafe_b64decode(padded)
-        print(f"\n✓ Method 2 (urlsafe with padding): Success")
+        print("\n✓ Method 2 (urlsafe with padding): Success")
         print(f"  Size: {len(pdf_bytes)} bytes")
         print(f"  Header: {pdf_bytes[:8]}")
         print(f"  Valid PDF: {pdf_bytes.startswith(b'%PDF')}")
@@ -1001,7 +997,7 @@ def test_pdf_decode(b64_string):
         standard = b64_string.replace('-', '+').replace('_', '/')
         padded = standard + '=' * (4 - len(standard) % 4)
         pdf_bytes = base64.b64decode(padded)
-        print(f"\n✓ Method 3 (standard base64): Success")
+        print("\n✓ Method 3 (standard base64): Success")
         print(f"  Size: {len(pdf_bytes)} bytes")
         print(f"  Header: {pdf_bytes[:8]}")
         print(f"  Valid PDF: {pdf_bytes.startswith(b'%PDF')}")
@@ -1021,7 +1017,6 @@ def test_pdf_decode(b64_string):
 
 def main(thread_ids, access_token, user_key, save_pdfs=False):
     start_time = datetime.now()
-    import requests
     
     collector = GmailEmailCollector(
         access_token=access_token,
@@ -1094,7 +1089,7 @@ def main(thread_ids, access_token, user_key, save_pdfs=False):
     db_emails.save_batch()
     
     # Print summary statistics
-    print(f"\nCollection Summary:")
+    print("\nCollection Summary:")
     print(f"  Total threads requested: {len(thread_ids)}")
     print(f"  Unique threads collected: {len(threads_dict)}")
     print(f"  Total emails collected: {len(result.emails)}")

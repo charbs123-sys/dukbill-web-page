@@ -14,7 +14,6 @@ import tiktoken
 import botocore.session
 import time
 load_dotenv()
-import asyncio
 from broker_langchain import chunked_emails_true_batch_async
 from classify_subject import chunked_subject_batch_async
 # Your existing imports
@@ -93,7 +92,7 @@ class Database_Retrieve:
             return processed_batches
             
         except self.s3_client.exceptions.NoSuchKey:
-            print(f"[BATCH TRACKER] No processed batches tracker found, starting fresh")
+            print("[BATCH TRACKER] No processed batches tracker found, starting fresh")
             return set()
         except Exception as e:
             print(f"[BATCH TRACKER] Error reading processed batches: {e}")
@@ -311,7 +310,7 @@ class Database_Retrieve:
                 print(f"[S3 BATCH CHECK] Original batch: {original_batch}, Retry count: {retry_count}")
                 return data
             else:
-                print(f"[S3 BATCH CHECK] Invalid pending batch structure")
+                print("[S3 BATCH CHECK] Invalid pending batch structure")
                 print(f"[S3 BATCH CHECK] Expected dict with 'emails' and '_batch_metadata', got: {type(data)}")
                 return None
                 
@@ -358,7 +357,7 @@ class Database_Retrieve:
             
             # Check for errors
             if 'Errors' in delete_response and len(delete_response['Errors']) > 0:
-                print(f"[S3 BATCH CLEAR] Errors occurred while deleting:")
+                print("[S3 BATCH CLEAR] Errors occurred while deleting:")
                 for error in delete_response['Errors']:
                     print(f"[S3 BATCH CLEAR] - {error['Key']}: {error['Message']}")
                 return False
@@ -706,7 +705,7 @@ async def handle_new_entry_broker_async(user_email):
                 start_time, 
                 encoding
             )
-            print(f"[ASYNC] Subject classification complete")
+            print("[ASYNC] Subject classification complete")
             
             response = filter_response_on_subject_output(results_subject, response)
             print(f"Filtered to {len(response)} relevant emails")
@@ -739,7 +738,7 @@ async def handle_new_entry_broker_async(user_email):
                 encoding,
                 already_batched=False
             )
-        print(f"[ASYNC] Email classification complete")
+        print("[ASYNC] Email classification complete")
         
         # Process the results from this batch
         final_json = combine_chatgpt_responses_broker(results)
@@ -860,17 +859,17 @@ async def handle_new_entry_broker_async(user_email):
             try:
                 decompressed_body = gzip.decompress(body)
                 existing_data = json.loads(decompressed_body.decode('utf-8'))
-                print(f"[RETRIEVE] Successfully retrieved compressed anonymized emails")
+                print("[RETRIEVE] Successfully retrieved compressed anonymized emails")
             except (OSError, gzip.BadGzipFile):
                 existing_data = json.loads(body.decode('utf-8'))
-                print(f"[RETRIEVE] Successfully retrieved uncompressed anonymized emails")
+                print("[RETRIEVE] Successfully retrieved uncompressed anonymized emails")
             
             if existing_data:
                 all_anonymized_emails = existing_data if isinstance(existing_data, list) else [existing_data]
                 print(f"[RETRIEVE] Loaded {len(all_anonymized_emails)} existing anonymized email records")
             
         except db_function.s3_client.exceptions.NoSuchKey:
-            print(f"[RETRIEVE] No existing anonymized emails found, starting fresh")
+            print("[RETRIEVE] No existing anonymized emails found, starting fresh")
             all_anonymized_emails = []
         except Exception as e:
             print(f"[RETRIEVE] Error retrieving anonymized emails: {e}")

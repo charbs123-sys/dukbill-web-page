@@ -1,7 +1,6 @@
 import sys
 import json
 import gzip
-import asyncio
 import concurrent.futures
 from datetime import datetime
 import hashlib
@@ -91,7 +90,7 @@ class Database_Retrieve:
             return processed_batches
             
         except self.s3_client.exceptions.NoSuchKey:
-            print(f"[BATCH TRACKER] No processed batches tracker found, starting fresh")
+            print("[BATCH TRACKER] No processed batches tracker found, starting fresh")
             return set()
         except Exception as e:
             print(f"[BATCH TRACKER] Error reading processed batches: {e}")
@@ -309,7 +308,7 @@ class Database_Retrieve:
                 print(f"[S3 BATCH CHECK] Original batch: {original_batch}, Retry count: {retry_count}")
                 return data
             else:
-                print(f"[S3 BATCH CHECK] Invalid pending batch structure")
+                print("[S3 BATCH CHECK] Invalid pending batch structure")
                 print(f"[S3 BATCH CHECK] Expected dict with 'emails' and '_batch_metadata', got: {type(data)}")
                 return None
                 
@@ -356,7 +355,7 @@ class Database_Retrieve:
             
             # Check for errors
             if 'Errors' in delete_response and len(delete_response['Errors']) > 0:
-                print(f"[S3 BATCH CLEAR] Errors occurred while deleting:")
+                print("[S3 BATCH CLEAR] Errors occurred while deleting:")
                 for error in delete_response['Errors']:
                     print(f"[S3 BATCH CLEAR] - {error['Key']}: {error['Message']}")
                 return False
@@ -864,11 +863,11 @@ def handle_new_entry_broker(user_email):
             try:
                 decompressed_body = gzip.decompress(body)
                 existing_data = json.loads(decompressed_body.decode('utf-8'))
-                print(f"[RETRIEVE] Successfully retrieved compressed anonymized emails")
+                print("[RETRIEVE] Successfully retrieved compressed anonymized emails")
             except (OSError, gzip.BadGzipFile):
                 # Not gzipped, try plain JSON
                 existing_data = json.loads(body.decode('utf-8'))
-                print(f"[RETRIEVE] Successfully retrieved uncompressed anonymized emails")
+                print("[RETRIEVE] Successfully retrieved uncompressed anonymized emails")
             
             # Populate all_anonymized_emails with existing data
             if existing_data:
@@ -876,7 +875,7 @@ def handle_new_entry_broker(user_email):
                 print(f"[RETRIEVE] Loaded {len(all_anonymized_emails)} existing anonymized email records")
             
         except db_function.s3_client.exceptions.NoSuchKey:
-            print(f"[RETRIEVE] No existing anonymized emails found, starting fresh")
+            print("[RETRIEVE] No existing anonymized emails found, starting fresh")
             all_anonymized_emails = []
         except Exception as e:
             print(f"[RETRIEVE] Error retrieving anonymized emails: {e}")
