@@ -5,3 +5,4 @@ MYOB_implementation/.env
 testing*
 *.pyc
 Backend/External_APIs/basiq_api.py
+Backend/.venv/

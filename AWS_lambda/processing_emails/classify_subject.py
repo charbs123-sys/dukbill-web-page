@@ -115,7 +115,7 @@ def process_subject_batch(subject_batch, structured_llm, max_retries=5):
             
             return result
             
-        except RateLimitError as e:
+        except RateLimitError:
             wait_time = 2 ** attempt
             print(f"[Retry {attempt + 1}] RateLimitError: Waiting {wait_time}s")
             time.sleep(wait_time)
@@ -202,7 +202,7 @@ def chunked_subject_batch(email_data_list, structured_llm, start_time, encoding)
     total_classified = sum(len(r.subject_individual) for r in all_results if hasattr(r, 'subject_individual'))
     total_pending = len(rest_of_emails)
     
-    print(f"\n[SUMMARY]")
+    print("\n[SUMMARY]")
     print(f"  Input subjects: {total_input}")
     print(f"  Classified: {total_classified}")
     print(f"  Pending retry: {total_pending}")

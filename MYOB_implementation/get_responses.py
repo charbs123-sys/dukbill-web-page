@@ -6,7 +6,6 @@ import requests
 import json
 import os
 from dotenv import load_dotenv
-import urllib
 # Load environment variables
 load_dotenv()
 

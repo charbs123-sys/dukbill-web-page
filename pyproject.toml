@@ -1,0 +1,19 @@
+[dependency-groups]
+dev = [
+    "ruff>=0.14.10",
+]
+
+[tool.ruff]
+# Exclude a list of file patterns from formatting and linting.
+exclude = [
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "build",
+    "dist",
+    "migrations",
+    "node_modules",
+    "venv",
+    "MYOB_implementation",
+    "testing"
+]

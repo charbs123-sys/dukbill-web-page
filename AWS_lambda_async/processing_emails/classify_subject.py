@@ -127,7 +127,7 @@ async def process_subject_batch_async(subject_batch, structured_llm, max_retries
             
             return result
             
-        except RateLimitError as e:
+        except RateLimitError:
             wait_time = 2 ** attempt
             print(f"[ASYNC SUBJECT Retry {attempt + 1}] RateLimitError: Waiting {wait_time}s")
             await asyncio.sleep(wait_time)  # Async sleep
@@ -271,7 +271,7 @@ async def chunked_subject_batch_async(email_data_list, structured_llm, start_tim
     total_classified = sum(len(r.subject_individual) for r in all_results if hasattr(r, 'subject_individual'))
     total_pending = len(rest_of_emails)
     
-    print(f"\n[ASYNC SUBJECT SUMMARY]")
+    print("\n[ASYNC SUBJECT SUMMARY]")
     print(f"  Input subjects: {total_input}")
     print(f"  Classified: {total_classified}")
     print(f"  Pending retry: {total_pending}")

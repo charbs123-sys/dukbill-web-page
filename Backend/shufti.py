@@ -14,10 +14,10 @@ def shufti_url(user_email: str, user_id: int):
     url = 'https://api.shuftipro.com/'
     client_id = os.environ.get("SHUFTI_CLIENTID")
     secret_key = os.environ.get("SHUFTI_SECRET_KEY")
-    
+
     # Generate reference with user_id for easier tracking
     reference = f'ref-{user_id}-{randint(10000, 99999)}'
-    
+
     verification_request = {
         "reference": reference,
         "callback_url": REDIRECT_URI,
@@ -33,7 +33,7 @@ def shufti_url(user_email: str, user_id: int):
         "show_consent": "1",
         "show_feedback_form": "0"
     }
-    
+
     verification_request['document'] = {
         'name': "",
         'dob': "",
@@ -45,7 +45,7 @@ def shufti_url(user_email: str, user_id: int):
         'fetch_enhanced_data': "1",
         'supported_types': ['id_card', 'passport', 'driving_license']
     }
-    
+
     # ... rest of your existing code
     auth = '{}:{}'.format(client_id, secret_key)
     b64Val = base64.b64encode(auth.encode()).decode()
@@ -54,14 +54,14 @@ def shufti_url(user_email: str, user_id: int):
         headers={"Authorization": "Basic %s" % b64Val, "Content-Type": "application/json"},
         data=json.dumps(verification_request)
     )
-    
+
     secret_key_new = hashlib.sha256(secret_key.encode()).hexdigest()
     calculated_signature = hashlib.sha256(
         f"{response.content.decode()}{secret_key_new}".encode()
     ).hexdigest()
     sp_signature = response.headers.get('Signature', "")
     json_response = json.loads((response.content))
-    
+
     if sp_signature == calculated_signature:
         return json_response
     else:
@@ -73,14 +73,14 @@ def get_verification_status_with_proofs(reference: str):
     url = 'https://api.shuftipro.com/status'
     client_id = os.environ.get("SHUFTI_CLIENTID")
     secret_key = os.environ.get("SHUFTI_SECRET_KEY")
-    
+
     payload = {
         "reference": reference
     }
-    
+
     auth = f'{client_id}:{secret_key}'
     b64Val = base64.b64encode(auth.encode()).decode()
-    
+
     response = requests.post(
         url,
         headers={
@@ -89,14 +89,14 @@ def get_verification_status_with_proofs(reference: str):
         },
         data=json.dumps(payload)
     )
-    
+
     # Verify signature
     secret_key_hash = hashlib.sha256(secret_key.encode()).hexdigest()
     calculated_signature = hashlib.sha256(
         f"{response.content.decode()}{secret_key_hash}".encode()
     ).hexdigest()
     sp_signature = response.headers.get('Signature', "")
-    
+
     if sp_signature == calculated_signature:
         return response.json()
     else:
@@ -109,13 +109,13 @@ def download_proof_image(proof_url: str, access_token: str):
     payload = {
         "access_token": access_token
     }
-    
+
     response = requests.post(
         proof_url,
         json=payload,
         headers={"Content-Type": "application/json"}
     )
-    
+
     if response.status_code == 200:
         return response.content
     else:

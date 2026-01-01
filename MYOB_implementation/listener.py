@@ -63,7 +63,7 @@ def get_access_token(code):
         print(f"Refresh Token: {tokens['refresh_token'][:30]}...")
         return tokens
     else:
-        print(f"\n✗ Error getting access token:")
+        print("\n✗ Error getting access token:")
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text}")
         return None
@@ -76,7 +76,7 @@ def start_auth():
         return
     
     auth_url = build_auth_url(API_KEY, REDIRECT_URI, SCOPE)
-    print(f"Opening browser for authentication...")
+    print("Opening browser for authentication...")
     print(f"Authorization URL: {auth_url}")
     webbrowser.open(auth_url)
     

@@ -3,6 +3,7 @@ import os
 # Load .env only if running locally (i.e., not in ECS)
 if not os.environ.get("ECS_ENVIRONMENT"):
     from dotenv import load_dotenv
+
     load_dotenv()
 
 # --- Database Configuration ---
@@ -11,7 +12,7 @@ DB_CONFIG = {
     "user": os.environ.get("DB_USER"),
     "password": os.environ.get("DB_PASSWORD"),
     "database": os.environ.get("DB_NAME", "dukbill"),
-    "port": int(os.environ.get("DB_PORT", 3306))
+    "port": int(os.environ.get("DB_PORT", 3306)),
 }
 
 # --- Auth0 Configuration ---
@@ -28,17 +29,17 @@ S3_CONFIG = {
     "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
     "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
     "AWS_REGION": os.environ.get("AWS_REGION", "ap-southeast-2"),
-    "S3_BUCKET_NAME": os.environ.get("S3_BUCKET_NAME")
+    "S3_BUCKET_NAME": os.environ.get("S3_BUCKET_NAME"),
 }
 
 # --- Cloudfront Configuration ---
 CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
 
-'''
+"""
 # --- Basiq API Configuration ---
 BASIQ_API_KEY = os.environ.get("BASIQ_API_KEY")
 BASIQ_BASE_URL = os.environ.get("BASIQ_BASE_URL")
-'''
+"""
 # --- Gmail API Configuration ---
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
@@ -66,14 +67,14 @@ DOCUMENT_CATEGORIES = {
         "Notice of Assessment",
         "Employment Contract",
         "Employment Letter",
-        "Invoices"
+        "Invoices",
     ],
     "Bank & Financial Documents": [
         "Bank Statements",
         "Credit Card Statements",
         "Loan Statements",
         "ATO Debt Statement",
-        "HECS/HELP Debt"
+        "HECS/HELP Debt",
     ],
     "ID & Verification Documents": [
         "Driver's Licence",
@@ -81,7 +82,7 @@ DOCUMENT_CATEGORIES = {
         "Medicare Card",
         "Birth Certificate",
         "Citizenship Certificate",
-        "VOI Certificate"
+        "VOI Certificate",
     ],
     "Property-Related Documents": [
         "Contract of Sale",
@@ -95,7 +96,7 @@ DOCUMENT_CATEGORIES = {
         "Rates Notice",
         "Rental Appraisal",
         "Tenancy Agreement",
-        "Rental Statement"
+        "Rental Statement",
     ],
     "Other Supporting Documents": [
         "Gift Letter",
@@ -103,9 +104,8 @@ DOCUMENT_CATEGORIES = {
         "Superannuation Statement",
         "Utility Bills",
         "Bills",
-        "Miscellaneous or Unclassified"
-        
-    ]
+        "Miscellaneous or Unclassified",
+    ],
 }
 
 
@@ -121,21 +121,21 @@ EXPECTED_REPORTS_XERO = [
     "xero_invoices_report.pdf",
     "xero_payments_report.pdf",
     "xero_payroll_report.pdf",
-    "xero_transactions_report.pdf"
+    "xero_transactions_report.pdf",
 ]
 
-#myob config
+# myob config
 
 EXPECTED_REPORTS_MYOB = [
     "Broker_Payroll_Summary.pdf",
     "Broker_Sales_Summary.pdf",
     "Broker_Banking_Summary.pdf",
-    "Broker_Purchases_Summary.pdf"
+    "Broker_Purchases_Summary.pdf",
 ]
 
-#idmerit config
+# idmerit config
 EXPECTED_REPORTS_IDMERIT = [
     "idmerit_front_id.pdf",
     "idmerit_back_id.pdf",
-    "idmerit_passport.pdf"
+    "idmerit_passport.pdf",
 ]

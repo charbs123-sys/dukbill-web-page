@@ -275,7 +275,7 @@ def generate_no_findings_html_broker():
     Returns:
         str: HTML content for the email.
     """
-    return f"""
+    return """
     <html>
       <body style="font-family: Arial, sans-serif; color: #333;">
         <h2>Your Dukbill Summary</h2>

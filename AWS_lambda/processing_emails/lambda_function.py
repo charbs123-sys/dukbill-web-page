@@ -1,4 +1,3 @@
-import main
 import json
 import os
 import boto3
@@ -14,13 +13,11 @@ os.environ['TESSDATA_PREFIX'] = '/opt/tesseract/share/tessdata'
 
 
 import pytesseract
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 pytesseract.pytesseract.tesseract_cmd = '/opt/bin/tesseract'
 
 
 import os
-import subprocess
-import json
 
 def lambda_handler(event, context):
     try:
