@@ -41,13 +41,14 @@ from Documents.documents import (
     get_client_dashboard,
     get_docs_general,
     get_download_urls,
-    get_email_domain,
     hash_email,
     remove_comment_client_document,
     remove_comment_docs_general,
-    search_user_by_auth0,
     update_anonymized_json_general,
     upload_client_document,
+)
+from Database.db_utils import (
+    search_user_by_auth0,
     verify_user_by_id,
 )
 from Documents.file_downloads import _invoke_zip_lambda_for, _stream_s3_zip
@@ -91,6 +92,8 @@ from helpers.xero_helpers import (
     get_basic_auth,
     tokens,
 )
+
+from helpers.helper import get_email_domain
 
 # ------------------------
 # Model Imports
