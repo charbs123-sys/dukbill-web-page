@@ -15,7 +15,6 @@ from urllib.parse import urlencode
 import requests
 from auth import verify_google_token, verify_token, verify_xero_auth
 
-# from External_APIs.basiq_api import BasiqAPI
 # ------------------------
 # File Imports
 # ------------------------
@@ -126,8 +125,6 @@ from users import (
 # FastAPI App Initialization
 # ------------------------
 app = FastAPI(title="Dukbill API", version="1.0.0")
-# basiq = BasiqAPI()
-# verification_states_shufti = {}
 REDIRECT_URL = os.environ.get(
     "REDIRECT_DUKBILL",
     "https://314dbc1f-20f1-4b30-921e-c30d6ad9036e-00-19bw6chuuv0n8.riker..dev/dashboard",
@@ -177,7 +174,6 @@ class XeroAuthRequest(BaseModel):
 # Work on implementing organization based login later
 # implement unit tests later
 # implement rate limiting later ---------------- important especially for routes that send emails, or per use endpoints like idmerit (limit to a couple times a day)
-
 
 # ------------------------
 # Dependencies
@@ -490,11 +486,6 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
         emails.append({"email_address": user_obj["email"]})
 
     documents = get_client_category_documents(client["client_id"], emails, category)
-
-    # want to remove later anyways
-    # if category in ["Driving License", "Id Card", "Passport"]:
-    #    verified_docs = get_client_verified_ids_documents(client["client_id"], [user_obj["email"]], category)
-    #    documents.extend(verified_docs)
 
     # retrieving xero/myob documents
     documents.extend(
@@ -1218,55 +1209,6 @@ async def outlook_callback(code: str, state: str):
     )
 """
 
-"""
-# ------------------------
-# Basiq Integration
-# ------------------------
-@app.get("/basiq/connect")
-async def connect_bank(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    if not user_obj["basiq_id"]:
-        basiq_user = basiq.create_user(user_obj["email"], user_obj["phone"])
-        add_basiq_id(user_obj["user_id"], basiq_user["id"])
-        user_obj = find_user(auth0_id)
-    client_token = basiq.get_client_access_token(user_obj["basiq_id"])
-    consent_url = f"https://consent.basiq.io/home?token={client_token}"
-    return RedirectResponse(consent_url)
-
-@app.get("/clients/bank/transactions")
-async def get_client_bank_transactions(user=Depends(get_current_user)):
-    claims, _ = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    basiq_id = user_obj.get("basiq_id")
-    if not basiq_id:
-        return {"transactions": []}
-    connections = basiq.get_user_connections(basiq_id).get("data", [])
-    if not connections:
-        return {"transactions": []}
-    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
-    return {"transactions": transactions}
-
-@app.get("/brokers/client/{client_id}/bank/transactions")
-async def get_broker_client_bank_transactions(client_id: int, user=Depends(get_current_user)):
-    client = verify_client(client_id)
-    is_broker_access = get_client_broker_list(client["client_id"])
-    if not is_broker_access[0].get("brokerAccess", True):
-        return {"error": "Access denied"}
-    client_user = get_user_from_client(client_id)
-    basiq_id = client_user.get("basiq_id")
-    if not basiq_id:
-        return {"transactions": []}
-    connections = basiq.get_user_connections(basiq_id).get("data", [])
-    if not connections:
-        return {"transactions": []}
-    transactions = basiq.get_user_transactions(basiq_id, active_connections=connections)
-    return {"transactions": transactions}
-"""
-
-
 # ------------------------
 # IDMERIT Routes
 # ------------------------
@@ -1326,92 +1268,6 @@ async def idmerit_callback(request: Request):
         return {"status": "User verified successfully"}
 
     return {"status": "User verification failed"}
-
-
-"""
-@app.post("/shufti/user_redirect")
-async def shufti_redirect(user=Depends(get_current_user)):
-    #going to delete later
-    claims, token = user
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
-    client = find_client(user_obj["user_id"])
-    #emails = get_client_emails(client["client_id"])
-    # Get user info
-    user_email = [user_obj["email"]]
-
-    encoded_token = token.encode()
-    encrypted_message = Encryption_function.encrypt(encoded_token)
-    
-    # Create verification request
-    response = shufti_url(user_obj["email"], user_obj["user_id"])
-    print(response)
-    if not response:
-        raise HTTPException(status_code=500, detail="Failed to create verification")
-    
-    reference = response.get("reference")
-
-    # Store the mapping of reference to user
-    verification_states_shufti[reference] = {
-        "user_id": user_obj["user_id"],
-        "auth0_id": auth0_id,
-        "email": user_obj["email"],
-        "created_at": time.time(),
-        "emails": user_email,
-        "client_id": client["client_id"]
-    }
-
-    return {
-        "verification_url": response["verification_url"],
-        "reference": reference
-    }
-
-@app.post('/profile/notifyCallback')
-async def notify_callback(request: Request):
-    #going to delete later
-    try:
-        raw_data = await request.body()
-        response_data = await request.json()
-        
-        # Verify signature
-        SECRET_KEY = os.environ.get("SHUFTI_SECRET_KEY")
-        sp_signature = request.headers.get('signature', '')
-        
-        if not verify_signature(raw_data, sp_signature, SECRET_KEY):
-            raise HTTPException(status_code=401, detail="Invalid signature")
-        
-        reference = response_data.get('reference')
-        event = response_data.get('event')
-        
-        log_callback_event(event, reference)
-
-        # Pass both parameters as function signature requires
-        verification_state = get_verification_state(reference, verification_states_shufti)
-        
-        if not verification_state:
-            # Still return 200 to acknowledge callback
-            return {"status": "success"}
-        
-        # Handle different event types
-        if event == 'verification.accepted':
-            # FIXED: Pass verification_state (the dict for this user), not verification_states_shufti
-            await handle_verification_accepted(reference, verification_state)
-            # Only delete if the key exists
-            if reference in verification_states_shufti:
-                del verification_states_shufti[reference]
-        
-        elif event == 'verification.declined':
-            handle_verification_declined(verification_state["user_id"], response_data)
-            if reference in verification_states_shufti:
-                del verification_states_shufti[reference]
-        
-        return {"status": "success"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-"""
 
 
 # ------------------------
