@@ -1,3 +1,0 @@
-http://localhost:8080/connect
-
-delete agentservice.exe for port conflicts
