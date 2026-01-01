@@ -174,7 +174,6 @@ class XeroAuthRequest(BaseModel):
 # Work on implementing organization based login later
 # implement unit tests later
 # implement rate limiting later ---------------- important especially for routes that send emails, or per use endpoints like idmerit (limit to a couple times a day)
-
 # ------------------------
 # Dependencies
 # ------------------------
