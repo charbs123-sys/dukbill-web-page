@@ -43,7 +43,11 @@ def find_unused_broker_doc_categories(final_json):
         'Guarantor Documents',
         'Superannuation Statement',
         'Utility Bills',
-        'Miscellaneous or Unclassified'
+        'Miscellaneous or Unclassified',
+        
+        "Xero Reports",
+        "MYOB Reports",
+        "Identity Verification",
     }
 
     # Extract used categories from final_json

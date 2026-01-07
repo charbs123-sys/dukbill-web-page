@@ -8,11 +8,13 @@ from Database.db_init import (
     IDMERITVerification,
     Users,
     engine,
+    Accountants,
+    ClientAccountant,
 )
 from helpers.helper import format_phonenumber
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
-
+from datetime import date, timedelta, datetime
 
 # ------------------------
 # Generate Client/Broker ID
@@ -38,6 +40,13 @@ def get_unique_broker_id():
             if existing is None:
                 return candidate
 
+def get_unique_accountant_id():
+    with Session(engine) as session:
+        while True:
+            candidate = generate_id()
+            existing = session.get(Accountants, candidate)
+            if existing is None:
+                return candidate
 
 # ------------------------
 # Retrieve User/Client/Broker
@@ -64,6 +73,7 @@ def search_user_by_auth0(auth0_id: str) -> dict:
                 "company": result.company,
                 "picture": result.picture,
                 "isBroker": result.isBroker,
+                "isAccountant": result.isAccountant,
                 "profile_complete": result.profile_complete,
             }
         return None
@@ -85,6 +95,21 @@ def retrieve_broker(user_id: str) -> dict:
             return {"broker_id": result.broker_id, "user_id": result.user_id}
         return None
 
+def retrieve_accountant(user_id: str) -> dict:
+    """
+    Search for whether an accountant exists
+
+    user_id (str): The user ID.
+
+    Returns:
+        dict: Accountant information
+    """
+    with Session(engine) as session:
+        stmt = select(Accountants).where(Accountants.user_id == user_id)
+        result = session.execute(stmt).scalar_one_or_none()
+        if result:
+            return {"accountant_id": result.accountant_id, "user_id": result.user_id}
+        return None
 
 def retrieve_client(user_id: str) -> dict:
     """
@@ -165,6 +190,28 @@ def get_client_brokers_db(client_id: str) -> list:
             )
         return brokers
 
+def get_clients_accountant_db(client_id: str) -> list:
+    """
+    Retrieving all the accountants associated with a client
+
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of accountants associated with the client
+    """
+    with Session(engine) as session:
+        stmt = select(ClientAccountant).where(ClientAccountant.client_id == client_id)
+        results = session.execute(stmt).scalars().all()
+        accountants = []
+        for result in results:
+            accountants.append(
+                {
+                    "accountant_id": result.accountant_id,
+                    "accountant_verify": result.accountant_verify,
+                    "accountantAccess": result.accountantAccess,
+                }
+            )
+        return accountants
 
 # ------------------------
 # Verify User/Client/Broker
@@ -229,6 +276,20 @@ def verify_broker_by_id(broker_id: str) -> dict | None:
             return {"broker_id": result.broker_id, "user_id": result.user_id}
         return None
 
+def verify_accountant_by_id(accountant_id: str) -> dict | None:
+    """
+    verify the existence of an accountant by accountant_id
+
+    accountant_id (str): The accountant ID.
+
+    Returns:
+        dict: Accountant information
+    """
+    with Session(engine) as session:
+        result = session.get(Accountants, accountant_id)
+        if result:
+            return {"accountant_id": result.accountant_id, "user_id": result.user_id}
+        return None
 
 def verify_email_db(client_id: str, email: str) -> dict | None:
     """
@@ -323,6 +384,26 @@ def add_client_broker(client_id: str, broker_id: str) -> str:
         session.commit()
         return new_client_broker.broker_id
 
+def add_client_accountant(client_id: str, accountant_id: str) -> str:
+    """
+    Add a new relationship between clients and accountants in the database
+
+    client_id (str): The client ID.
+    accountant_id (str): The accountant ID.
+
+    Returns:
+        str: The newly created client_accountant ID.
+    """
+    with Session(engine) as session:
+        new_client_accountant = ClientAccountant(
+            client_id=client_id,
+            accountant_id=accountant_id,
+            accountant_verify=False,
+            accountantAccess=False,
+        )
+        session.add(new_client_accountant)
+        session.commit()
+        return new_client_accountant.accountant_id
 
 def add_broker(user_id: str) -> str:
     """
@@ -340,6 +421,24 @@ def add_broker(user_id: str) -> str:
         session.commit()
         return new_broker.broker_id
 
+def add_accountant(user_id: str) -> str:
+    """
+    Adding a new accountant entry in the database
+
+    user_id (str): The user ID.
+
+    Returns:
+        str: The newly created accountant ID.
+    """
+    accountant_id = get_unique_accountant_id()
+    #email_send_date = date.today() + timedelta(weeks=1)
+    #temporarily just make that day today
+    email_send_date = date.today()
+    with Session(engine) as session:
+        new_accountant = Accountants(accountant_id=accountant_id, user_id=user_id, email_send_date=email_send_date, documents_collected=False, emails_sent=0, refuse_email_service=False)
+        session.add(new_accountant)
+        session.commit()
+        return new_accountant.accountant_id
 
 # ------------------------
 # User profile
@@ -365,10 +464,16 @@ def update_user_profile(auth0_id: str, profile_data: dict) -> None:
         # Handle user_type
         if "user_type" in profile_data:
             user_type = profile_data.pop("user_type")
-            if user_type == "client":
+            if user_type == "accountant":
+                user.isAccountant = True
+                user.isBroker = False
+            elif user_type == "client":
+                user.isAccountant = False
                 user.isBroker = False
             elif user_type == "broker":
+                user.isAccountant = False
                 user.isBroker = True
+
 
         # Handle phone formatting
         if "phone" in profile_data:
@@ -416,6 +521,30 @@ def toggle_broker_access_db(client_id: str, broker_id: str) -> bool | None:
         session.refresh(cb)
         return cb.brokerAccess
 
+def toggle_accountant_access_db(client_id: str, accountant_id: str) -> bool | None:
+    """
+    Changing the accountant access status for a client-accountant relationship
+
+    client_id (str): The client ID.
+    accountant_id (str): The accountant ID.
+
+    Returns:
+        bool | None: The updated accountant access status or None if not found
+    """
+    with Session(engine) as session:
+        ca = session.execute(
+            select(ClientAccountant)
+            .where(ClientAccountant.client_id == client_id)
+            .where(ClientAccountant.accountant_id == accountant_id)
+        ).scalar_one_or_none()
+
+        if not ca:
+            return None
+
+        ca.accountantAccess = not ca.accountantAccess
+        session.commit()
+        session.refresh(ca)
+        return ca.accountantAccess
 
 def get_brokers_for_client(client_id: str) -> list:
     """
@@ -456,6 +585,44 @@ def get_brokers_for_client(client_id: str) -> list:
 
         return brokers
 
+def get_accountants_for_client(client_id: str) -> list:
+    """
+    Fetching all the accountants associated with a client
+
+    client_id (str): The client ID.
+
+    Returns:
+        list: List of accountants associated with the client
+    """
+    with Session(engine) as session:
+        stmt = (
+            select(
+                Accountants.accountant_id,
+                Users.name,
+                Users.picture,
+                ClientAccountant.accountantAccess,
+                ClientAccountant.accountant_verify,
+            )
+            .join(ClientAccountant, Accountants.accountant_id == ClientAccountant.accountant_id)
+            .join(Users, Accountants.user_id == Users.user_id)
+            .where(ClientAccountant.client_id == client_id)
+        )
+
+        results = session.execute(stmt).all()
+
+        accountants = []
+        for row in results:
+            accountants.append(
+                {
+                    "accountant_id": row.accountant_id,
+                    "name": row.name,
+                    "picture": row.picture,
+                    "accountantAccess": row.accountantAccess,
+                    "accountant_verify": row.accountant_verify,
+                }
+            )
+
+        return accountants
 
 def delete_client_broker_db(client_id: str, broker_id: str) -> None:
     """
@@ -469,6 +636,17 @@ def delete_client_broker_db(client_id: str, broker_id: str) -> None:
         session.commit()
         return
 
+def delete_client_accountant_db(client_id: str, accountant_id: str) -> None:
+    """
+    Delete relationship between client and accountant
+    """
+    with Session(engine) as session:
+        stmt = delete(ClientAccountant).where(
+            ClientAccountant.client_id == client_id, ClientAccountant.accountant_id == accountant_id
+        )
+        session.execute(stmt)
+        session.commit()
+        return
 
 # ------------------------
 # Broker
@@ -513,6 +691,45 @@ def get_clients_for_broker(broker_id: str) -> list:
 
         return clients
 
+def get_clients_for_accountant(accountant_id: str) -> list:
+    """
+    Fetch all clients related to an accountant
+
+    accountant_id (str): The accountant ID.
+
+    Returns:
+        list: List of clients associated with the accountant
+    """
+    with Session(engine) as session:
+        stmt = (
+            select(
+                ClientAccountant.client_id,
+                Users.name,
+                Users.picture,
+                ClientAccountant.accountant_verify,
+                ClientAccountant.accountantAccess,
+            )
+            .select_from(ClientAccountant)
+            .join(Clients, Clients.client_id == ClientAccountant.client_id)
+            .join(Users, Users.user_id == Clients.user_id)
+            .where(ClientAccountant.accountant_id == accountant_id)
+        )
+
+        results = session.execute(stmt).all()
+
+        clients = []
+        for row in results:
+            clients.append(
+                {
+                    "id": row.client_id,
+                    "name": row.name,
+                    "picture": row.picture,
+                    "accountant_verify": row.accountant_verify,
+                    "accountantAccess": row.accountantAccess,
+                }
+            )
+
+        return clients
 
 def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
     """
@@ -539,6 +756,33 @@ def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
         session.refresh(cb)
         return cb.broker_verify
 
+# ------------------------
+# Accountant
+# ------------------------
+
+def find_accountant_emails(today: date) -> None:
+    with Session(engine) as session:
+        accountants = session.query(Accountants).filter(
+            Accountants.email_send_date == today
+        ).all()
+        return accountants
+    return None
+
+def update_accountant_email_date(accountant_id: str, next_email_date: date) -> None:
+    with Session(engine) as session:
+        accountant = session.get(Accountants, accountant_id)
+        if accountant:
+            accountant.email_send_date = next_email_date
+            session.commit()
+    return None
+
+def set_accountant_opt_out_db(accountant_id: str) -> None:
+    with Session(engine) as session:
+        accountant = session.get(Accountants, accountant_id)
+        if accountant:
+            accountant.refuse_email_service = True
+            session.commit()
+    return None
 
 # ------------------------
 # Email

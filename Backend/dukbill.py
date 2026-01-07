@@ -11,10 +11,10 @@ import threading
 import time
 import urllib
 from urllib.parse import urlencode
-
+from datetime import datetime, date, timedelta
 import requests
 from auth import verify_google_token, verify_token, verify_xero_auth
-
+from zoneinfo import ZoneInfo
 # ------------------------
 # File Imports
 # ------------------------
@@ -45,6 +45,8 @@ from Documents.documents import (
     remove_comment_docs_general,
     update_anonymized_json_general,
     upload_client_document,
+    delete_accountant_document,
+    get_docs_accountant,
 )
 from Database.db_utils import (
     search_user_by_auth0,
@@ -76,7 +78,7 @@ from helpers.idmerit_helpers import (
     upload_idmerit_user_image_s3,
 )
 from helpers.myob_helper import build_auth_url, process_myob_data
-from helpers.sending_email import send_broker_to_client
+from helpers.sending_email import send_broker_to_client, send_dukbill_to_accountant
 
 # from shufti import shufti_url
 # from helpers.id_helpers import
@@ -119,6 +121,18 @@ from users import (
     toggle_client_verification,
     update_profile,
     verify_client,
+    register_accountant,
+    find_accountant,
+    register_client_accountant,
+    get_client_accountants,
+    remove_client_accountant,
+    toggle_accountant_access,
+    get_accountant_clients,
+    get_accountant_clients_list,
+    filter_accountant_emails,
+    verify_user,
+    update_next_email_date,
+    set_accountant_opt_out,
 )
 
 # ------------------------
@@ -171,9 +185,32 @@ class XeroAuthRequest(BaseModel):
     code: str
 
 
+
+#Start up scheduler
+SYDNEY_TZ = ZoneInfo("Australia/Sydney")
+
+def run_schedule_in_tz(hour: int, minute: int):
+    """Run job daily at given time (Sydney) even if system is UTC"""
+    while True:
+        now = datetime.now(SYDNEY_TZ)
+        if now.hour == hour and now.minute == minute:
+            print("this is a trigger")
+            fetch_and_process_accountants()
+            # Sleep for one minute to avoid double‑triggering
+            time.sleep(60)
+        time.sleep(10)
+
+def start_scheduler():
+    t = threading.Thread(target=run_schedule_in_tz, args=(12, 0), daemon=True)
+    t.start()
+
+start_scheduler()
+
+
 # Work on implementing organization based login later
 # implement unit tests later
 # implement rate limiting later ---------------- important especially for routes that send emails, or per use endpoints like idmerit (limit to a couple times a day)
+
 # ------------------------
 # Dependencies
 # ------------------------
@@ -290,6 +327,12 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         profile = find_broker(user_obj["user_id"])
         profile_id = profile["broker_id"]
         user_type = "broker"
+
+    elif user_obj["isAccountant"]:
+        profile = find_accountant(user_obj["user_id"])
+        profile_id = profile["accountant_id"]
+        user_type = "accountant"
+    
     else:
         profile = find_client(user_obj["user_id"])
         profile_id = profile["client_id"]
@@ -334,6 +377,11 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)) -
     elif user_type == "broker":
         # adding broker to database
         register_broker(user_obj["user_id"])
+        validatedBroker = True
+    
+    elif user_type == "accountant":
+        # adding accountant to database
+        register_accountant(user_obj["user_id"])
         validatedBroker = True
 
     user_obj = update_profile(auth0_id, profile_data)
@@ -470,8 +518,9 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
     claims, _ = user
     auth0_id = claims["sub"]
     category = request.get("category")
+
     user_obj = find_user(auth0_id)
-    if not user_obj or user_obj["isBroker"]:
+    if not user_obj or user_obj["isBroker"] or user_obj["isAccountant"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     client = find_client(user_obj["user_id"])
@@ -485,12 +534,31 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
         emails.append({"email_address": user_obj["email"]})
 
     documents = get_client_category_documents(client["client_id"], emails, category)
-
+    
     # retrieving xero/myob documents
     documents.extend(
         get_docs_general(client["client_id"], [user_obj["email"]], category)
     )
+    hashed_client_email = hash_email(user_obj["email"])
+    
+    if category == "accountant":
+        return documents
 
+    elif category.startswith("accountant"):
+
+        subcategory = ""
+        documents.extend(
+            get_docs_accountant(client["client_id"], hashed_client_email, "accountant", subcategory)
+        )
+
+        subcategory = category.split("-")
+        if len(subcategory) > 1:
+            filter_category = subcategory[1]
+            for doc in documents:
+                cat_data = doc.get("category_data", {}).get("document_type")
+                if  cat_data is not None and cat_data != filter_category:
+                    documents.remove(doc)
+        
     return documents
 
 
@@ -615,7 +683,84 @@ async def delete_client_broker(broker_id: str, user=Depends(get_current_user)) -
     remove_client_broker(client["client_id"], broker_id)
     return {"message": "Broker removed successfully"}
 
+@app.post("/add/accountant")
+async def add_accountant(accountant_id: str, user=Depends(get_current_user)):
+    """
+    Allow clients to add accountants to their account
 
+    accountant_id (str): The accountant ID to add.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Registered accountant information {accountant_id: ...}
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    registered_accountant_id = register_client_accountant(client["client_id"], accountant_id)
+    if not registered_accountant_id:
+        raise HTTPException(status_code=400, detail="Invalid accountant ID")
+
+    return {"accountant_id": registered_accountant_id}
+
+@app.get("/get/accountants")
+async def get_accountants(user=Depends(get_current_user)) -> list:
+    """
+    Fetch all the accountants associated with the client
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        list: List of accountants associated with the client
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    get_accountant_info = get_client_accountants(client["client_id"])
+    return get_accountant_info
+
+@app.post("/accountant/access")
+async def toggle_accountant_access_route(
+    accountant_id: str, user=Depends(get_current_user)
+) -> dict:
+    """
+    Toggle whether broker has access to client documents
+
+    broker_id (str): The broker ID to toggle access for.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Updated broker access status {BrokerAccess: bool}
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user = find_user(auth0_id)
+    client = find_client(user["user_id"])
+
+    return {"AccountantAccess": toggle_accountant_access(client["client_id"], accountant_id)}
+
+@app.post("/client/accountant/delete")
+async def delete_client_accountant(accountant_id: str, user=Depends(get_current_user)) -> dict:
+    """
+    Allowing client to remove an accountant from their account
+
+    accountant_id (str): The accountant ID to remove.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on successful removal
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
+    remove_client_accountant(client["client_id"], accountant_id)
+    return {"message": "Accountant removed successfully"}
 # ------------------------
 # Broker Routes
 # ------------------------
@@ -952,6 +1097,245 @@ def send_email_to_client(
     )
     return {"message": "Email sent successfully"}
 
+# ------------------------
+# Accountant Routes
+# ------------------------
+@app.get("/accountants/client/list")
+async def get_client_accountant_all(user=Depends(get_current_user)) -> dict:
+    """
+    Fetch all clients related to a broker
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: List of clients associated with the broker {clients: [...]}
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    accountant = find_accountant(user_obj["user_id"])
+    clients = get_accountant_clients(accountant["accountant_id"])
+    return {"clients": clients}
+
+@app.get("/accountants/client/{client_id}/dashboard")
+async def get_client_accountant_dashboard(client_id: int, user=Depends(get_current_user)) -> dict:
+    """
+    Get the client dashboard view for accountants
+
+    client_id (int): The client ID to fetch the dashboard for.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Client dashboard information {headings: [...], AccountantAccess: [...], loginEmail: ...}
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    accountant = find_accountant(user_obj["user_id"])
+    client = verify_client(client_id)
+    if not client:
+        return {"error": "Access denied"}
+    client_user = get_user_from_client(client_id)
+    is_accountant_access = get_accountant_clients_list(client["client_id"])
+
+
+    # find the accountant and determine if they have access
+    for client_accountants in is_accountant_access:
+        if client_accountants.get("accountant_id") == accountant[
+            "accountant_id"
+        ] and not client_accountants.get("accountantAccess", False):
+            return {"error": "Access denied"}
+
+    emails = get_client_emails(client_id)
+
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+
+    # Add login email if not present
+    if client_user["email"] not in email_addresses:
+        emails.append({"email_address": client_user["email"]})
+
+    # retrieve missing docs
+
+    headings = get_client_dashboard(client_id, emails)
+
+    return {
+        "headings": headings,
+        "AccountantAccess": is_accountant_access,
+        "loginEmail": client_user["email"],
+    }
+
+#change clientid logic in accountant and broker routes to verify client
+
+@app.post("/accountant/client/{client_id}/category/documents")
+async def get_category_documents_accountant(
+    client_id: int, request: dict, user=Depends(get_current_user)
+):
+    """
+    Fetch the documents of an individual category on client_id for brokers to view
+
+    client_id (int): The client ID to fetch documents for.
+    request (dict) -> {category: category_name}
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        list: List of documents in the specified category
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    accountant = find_accountant(user_obj["user_id"])
+    client = verify_client(client_id)
+    is_accountant_access = get_accountant_clients_list(client["client_id"])
+    for client_accountants in is_accountant_access:
+        if client_accountants.get("accountant_id") == accountant[
+            "accountant_id"
+        ] and not client_accountants.get("accountantAccess", False):
+            return {"error": "Access denied"}
+
+    category = request.get("category")
+    client_user = get_user_from_client(client_id)
+    emails = get_client_emails(client_id)
+
+    # Extract email addresses for comparison
+    email_addresses = [e["email_address"] for e in emails]
+
+    # Add login email if not present
+    if client_user["email"] not in email_addresses:
+        emails.append({"email_address": client_user["email"]})
+
+    documents = get_client_category_documents(client_id, emails, category)
+
+    accountant_documents = []
+    for document in documents:
+        if document.get("category", "None") == "accountant":
+            accountant_documents.append(document)
+    return accountant_documents
+
+
+
+
+@app.post("/upload/document/card")
+async def upload_document_card(
+    client_id: int,
+    category: str = Form(...),
+    category_data: str = Form(...),
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+) -> dict:
+    """
+    Allow upload logic for client documents
+
+    category (str): The category of the document.
+    category_data (str): The JSON string containing additional category data.
+    file (UploadFile): The file to upload.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message with uploaded document information {status: "success", uploaded_document: {...}}
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    accountant = find_accountant(user_obj["user_id"])
+    client = verify_client(client_id)
+    is_accountant_access = get_accountant_clients_list(client["client_id"])
+    for client_accountants in is_accountant_access:
+        if client_accountants.get("accountant_id") == accountant[
+            "accountant_id"
+        ] and not client_accountants.get("accountantAccess", False):
+            return {"error": "Access denied"}
+
+    client_user = get_user_from_client(client_id)
+
+    email = client_user["email"]
+
+    try:
+        category_data_dict = json.loads(category_data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid category_data JSON")
+
+    new_doc = await upload_client_document(email, category, category_data_dict, file)
+
+    return {"status": "success", "uploaded_document": new_doc}
+
+@app.post("/accountants/delete_document_card")
+async def delete_client_document_accountant(
+    client_id: int, threadid: str, user=Depends(get_current_user)
+    ) -> dict:
+
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    accountant = find_accountant(user_obj["user_id"])
+    client = verify_client(client_id)
+    is_accountant_access = get_accountant_clients_list(client["client_id"])
+    for client_accountants in is_accountant_access:
+        if client_accountants.get("accountant_id") == accountant[
+            "accountant_id"
+        ] and not client_accountants.get("accountantAccess", False):
+            return {"error": "Access denied"}
+
+    client_user = get_user_from_client(client_id)
+
+    email = client_user["email"]
+
+    hashed_email = hash_email(email)
+    delete_client_document(hashed_email, threadid)
+
+    return {"status": "success"}
+
+@app.post("/accountants/opt_out_email_service")
+def opt_out_accountant_email_service(user=Depends(get_current_user)) -> dict:
+    """
+    Allow accountants to opt out of email service
+
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on successful opt-out
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    if not user_obj:
+        raise HTTPException(status_code=404, detail="User not found")
+    accountant = find_accountant(user_obj["user_id"])
+    if not accountant:
+        raise HTTPException(status_code=404, detail="Accountant not found")
+
+    set_accountant_opt_out(accountant["accountant_id"])
+    return {"status": "Successfully opted out of email service"}
+
+def fetch_and_process_accountants():
+    today = date.today()
+    accountants_to_send_ls = filter_accountant_emails(today)
+
+    for accountant in accountants_to_send_ls:
+        # accountant is an ORM object, not a dict
+        if accountant.refuse_email_service:
+            print(f"ℹ️ Skipping accountant {accountant.accountant_id}: opted out or documents collected.")
+            continue
+        accountant_details = verify_user(accountant.user_id)
+
+        if not accountant_details:
+            print(f"⚠️ Skipping accountant {accountant.accountant_id}: no user found.")
+            continue
+
+        send_dukbill_to_accountant(
+            accountant_name=accountant_details["name"],
+            accountant_email=accountant_details["email"],
+        )
+
+        update_next_email_date(
+            accountant.accountant_id, today + timedelta(days=7)
+        )
+
+    return {"status": "Accountant emails processed"}
 
 # ------------------------
 # Document Routes
