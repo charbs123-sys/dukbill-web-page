@@ -1,9 +1,9 @@
 from typing import Optional
 
 from config import DB_CONFIG
-from sqlalchemy import ForeignKey, String, create_engine
+from sqlalchemy import ForeignKey, String, create_engine, Date
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
+from datetime import date
 DB_URL = (
     f"mysql+mysqlconnector://{DB_CONFIG['user']}:{DB_CONFIG['password']}"
     f"@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
@@ -28,6 +28,7 @@ class Users(Base):
     company: Mapped[Optional[str]] = mapped_column(String(255))
     picture: Mapped[Optional[str]] = mapped_column(String(255))
     isBroker: Mapped[bool] = mapped_column(nullable=False, default=False)
+    isAccountant: Mapped[bool] = mapped_column(nullable=False, default=False)
     profile_complete: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 
@@ -36,12 +37,19 @@ class Brokers(Base):
     broker_id: Mapped[str] = mapped_column(String(6), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
 
-
 class Clients(Base):
     __tablename__ = "clients"
     client_id: Mapped[str] = mapped_column(String(6), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
 
+class Accountants(Base):
+    __tablename__ = "accountants"
+    accountant_id: Mapped[str] = mapped_column(String(6), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    email_send_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    documents_collected: Mapped[bool] = mapped_column(nullable=False, default=False)
+    emails_sent: Mapped[Optional[int]] = mapped_column(nullable=True, default=0)
+    refuse_email_service: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 class ClientBroker(Base):
     __tablename__ = "client_broker"
@@ -55,6 +63,17 @@ class ClientBroker(Base):
     broker_verify: Mapped[bool] = mapped_column(nullable=False, default=False)
     brokerAccess: Mapped[bool] = mapped_column(nullable=False, default=False)
 
+class ClientAccountant(Base):
+    __tablename__ = "client_accountant"
+    client_accountant_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(
+        String(6), ForeignKey("clients.client_id"), nullable=False
+    )
+    accountant_id: Mapped[str] = mapped_column(
+        String(6), ForeignKey("accountants.accountant_id"), nullable=False
+    )
+    accountant_verify: Mapped[bool] = mapped_column(nullable=False, default=False)
+    accountantAccess: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 class Emails(Base):
     __tablename__ = "emails"
@@ -77,7 +96,7 @@ class IDMERITVerification(Base):
 
 def initialize_database():
     """Create all tables if they don't exist"""
-    # Base.metadata.drop_all(engine)
-    # print("deleted DB")
+    #Base.metadata.drop_all(engine)
+    #print("deleted DB")
     Base.metadata.create_all(engine)
     print("SQL Database initialized.")

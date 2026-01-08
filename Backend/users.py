@@ -23,7 +23,20 @@ from Database.db_utils import (
     verify_client_by_id,
     verify_email_db,
     verify_user_by_id,
+    add_accountant,
+    retrieve_accountant,
+    verify_accountant_by_id,
+    add_client_accountant,
+    get_accountants_for_client,
+    toggle_accountant_access_db,
+    delete_client_accountant_db,
+    get_clients_for_accountant,
+    get_clients_accountant_db,
+    find_accountant_emails,
+    update_accountant_email_date,
+    set_accountant_opt_out_db,
 )
+from datetime import datetime, date
 from fastapi import HTTPException
 
 
@@ -105,6 +118,12 @@ def find_broker(user_id):
     broker = retrieve_broker(user_id)
     return broker
 
+def find_accountant(user_id):
+    """
+    Intermediate function handling accountant existence
+    """
+    accountant = retrieve_accountant(user_id)
+    return accountant
 
 def get_user_from_client(client_id):
     """
@@ -132,6 +151,11 @@ def verify_broker(broker_id):
     """
     return verify_broker_by_id(broker_id)
 
+def verify_accountant(accountant_id):
+    """
+    Intermediate function to check accountant existence
+    """
+    return verify_accountant_by_id(accountant_id)
 
 def verify_client(client_id):
     """
@@ -183,6 +207,12 @@ def register_broker(user_id: str) -> str:
     if verify_user(user_id):
         return add_broker(user_id)
 
+def register_accountant(user_id: str) -> str:
+    """
+    intermediate function to add accountant
+    """
+    if verify_user(user_id):
+        return add_accountant(user_id)
 
 # ------------------------
 #  User profile
@@ -211,6 +241,13 @@ def toggle_broker_access(client_id, broker_id):
         raise HTTPException(status_code=403, detail="Invalid client")
     return toggle_broker_access_db(client_id, broker_id)
 
+def toggle_accountant_access(client_id, accountant_id):
+    """
+    Intermediate function for toggling accountant access to client documents
+    """
+    if not verify_client(client_id) and not verify_accountant(accountant_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+    return toggle_accountant_access_db(client_id, accountant_id)
 
 def get_client_emails(client_id):
     if verify_client(client_id):
@@ -224,6 +261,12 @@ def get_client_brokers(client_id):
     if verify_client(client_id):
         return get_brokers_for_client(client_id)
 
+def get_client_accountants(client_id):
+    """
+    Intermediate function to get all accountants for a client
+    """
+    if verify_client(client_id):
+        return get_accountants_for_client(client_id)
 
 def register_client_broker(client_id, broker_id):
     """
@@ -234,6 +277,14 @@ def register_client_broker(client_id, broker_id):
     else:
         raise HTTPException(status_code=403, detail="Invalid client or broker")
 
+def register_client_accountant(client_id, accountant_id):
+    """
+    Intermediate function to add a new client-accountant relationship
+    """
+    if verify_client(client_id) and verify_accountant(accountant_id):
+        return add_client_accountant(client_id, accountant_id)
+    else:
+        raise HTTPException(status_code=403, detail="Invalid client or accountant")
 
 def remove_client_broker(client_id, broker_id):
     """
@@ -244,6 +295,14 @@ def remove_client_broker(client_id, broker_id):
 
     delete_client_broker_db(client_id, broker_id)
 
+def remove_client_accountant(client_id, accountant_id):
+    """
+    Intermediate function to delete a client-accountant relationship
+    """
+    if not verify_client(client_id) or not verify_accountant(accountant_id):
+        raise HTTPException(status_code=403, detail="Invalid client or accountant")
+
+    delete_client_accountant_db(client_id, accountant_id)
 
 # ------------------------
 #  Broker
@@ -264,6 +323,31 @@ def toggle_client_verification(client_id, broker_id):
         raise HTTPException(status_code=403, detail="Invalid client")
     return toggle_client_verify_db(client_id, broker_id)
 
+# ------------------------
+# Accountant
+# ------------------------
+
+def get_accountant_clients(accountant_id):
+    """
+    Intermediate function to get all clients for an accountant
+    """
+    if verify_accountant(accountant_id):
+        return get_clients_for_accountant(accountant_id)
+
+def filter_accountant_emails(date):
+        return find_accountant_emails(date.today())
+
+def update_next_email_date(accountant_id, next_email_date):
+    """
+    Update the next email send date for an accountant
+    """
+    return update_accountant_email_date(accountant_id, next_email_date)
+
+def set_accountant_opt_out(accountant_id):
+    """
+    Set the accountant to refuse email service
+    """
+    return set_accountant_opt_out_db(accountant_id)
 
 #
 # Client Broker
@@ -279,6 +363,15 @@ def get_client_broker_list(client_id):
 
     return get_client_brokers_db(client_id)
 
+
+def get_accountant_clients_list(client_id):
+    """
+    Get all accountants associated with a client
+    """
+    if not verify_client(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client or accountant")
+
+    return get_clients_accountant_db(client_id)
 
 # ------------------------
 #  Emails

@@ -314,3 +314,73 @@ def dukbill_verification_success_html(
 </body>
 </html>"""
     return html
+
+
+def send_dukbill_to_accountant(
+    accountant_name: str,
+    accountant_email: str,
+    cta_url: str | None = "https://dukbillapp.com/dashboard",
+) -> bool:
+    """
+    Sends a Dukbill-styled reminder email to an accountant notifying them
+    about missing documents that need to be uploaded.
+
+    Args:
+        accountant_name (str): Full name of the accountant (for personalization).
+        accountant_email (str): Recipient email address.
+        cta_url (str, optional): Call-to-action button URL (defaults to dashboard).
+
+    Returns:
+        bool: True if email was sent successfully, False otherwise.
+    """
+
+    from_email = os.getenv("EMAIL_ADDRESS")
+    from_password = os.getenv("EMAIL_PASSWORD")
+
+    if not from_email or not from_password:
+        print("⚠️ Missing EMAIL_ADDRESS or EMAIL_PASSWORD in environment.")
+        return False
+
+    # --- Hardcoded Email Content ---
+    subject = "Action Required: Missing Documents for Your Clients"
+    msg_contents = (
+        "There are still missing documents that need to be sent to your clients. "
+        "Please resolve this issue by visiting your Dukbill dashboard and uploading "
+        "the appropriate documents as soon as possible."
+    )
+
+    # --- Construct Email ---
+    msg = EmailMessage()
+    msg["From"] = f"Dukbill <{from_email}>"
+    msg["To"] = accountant_email
+    msg["Subject"] = subject
+
+    # Plain-text fallback (for older email clients)
+    plain = (
+        f"Hi {accountant_name},\n\n"
+        f"{msg_contents}\n\n"
+        "Best regards,\nThe Dukbill Team\nsupport@dukbillapp.com\n"
+    )
+    msg.set_content(plain)
+
+    # HTML version (consistent with Dukbill styling)
+    html = dukbill_style_html(
+        broker_name="Dukbill",
+        broker_email="support@dukbillapp.com",
+        client_first_name=accountant_name,
+        msg_contents=msg_contents,
+        cta_url=cta_url,
+        headline="Missing Client Documents",
+        today_str=date.today().strftime("%Y-%m-%d"),
+    )
+    msg.add_alternative(html, subtype="html")
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(from_email, from_password)
+            server.send_message(msg)
+        print(f"✅ Missing-documents email sent to {accountant_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send Dukbill email to {accountant_email}: {e}")
+        return False

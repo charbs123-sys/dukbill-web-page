@@ -265,7 +265,57 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
 
     return all_filtered_docs
 
+def get_docs_accountant(client_id: str, hashed_client_email: str, category: str, subcategory: str) -> list:
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+    all_filtered_docs = []
+    try:
+        documents = get_json_file(
+            hashed_client_email, "/broker_anonymized/emails_anonymized.json"
+        )
+    except HTTPException:
+        return []
 
+    prefix = f"{hashed_client_email}/categorised/{category}/truncated/"
+    # list all the file names in the truncated endpoint
+    s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    files = s3_objects.get("Contents", [])
+    threadid_to_keys = {}
+
+    # for each file in the s3 truncated files, check if it matches any threadid in the documents
+    for obj in files:
+        key = obj["Key"]
+        filename = key.split("/")[-1]
+        for doc in documents:
+            threadid = doc.get("threadid")
+            if not threadid:
+                continue
+            if filename.startswith(threadid + "_") or filename.startswith(threadid):
+                threadid_to_keys.setdefault(threadid, []).append(key)
+
+    # filter documents by category and match with s3 keys
+    for doc in documents:
+        if doc.get("broker_document_category", "Uncategorized") != category:
+            continue
+        threadid = doc.get("threadid")
+        pdf_keys = threadid_to_keys.get(threadid, [])
+        if not pdf_keys:
+            continue
+
+        urls = [get_cloudfront_url(k) for k in pdf_keys]
+
+        all_filtered_docs.append(
+            {
+                "id": threadid,
+                "category": category,
+                "category_data": doc.get("category_data"),
+                "url": urls,
+                "hashed_email": hashed_client_email,
+            }
+        )
+
+    return all_filtered_docs
+    pass
 # ------------------------
 # General Documents
 # ------------------------
@@ -607,7 +657,7 @@ async def upload_client_document(
         "threadid": threadid,
         "broker_document_category": category,
         "category_data": category_data,
-        "uploaded_at": datetime.utcnow().isoformat(),
+        "uploaded_at": datetime.datetime.utcnow().isoformat(),
     }
 
     documents.append(new_doc)
@@ -828,11 +878,11 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
         raise HTTPException(
             status_code=404, detail=f"Document with threadid '{threadid}' not found"
         )
-
     doc_to_delete = documents.pop(doc_index)
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
 
-    category = doc_to_delete.get("broker_document_category", "Uncategorized")
+    category = doc_to_delete.get("broker_document_category", None)
+
     hashed_email = hash_email(hashed_email)
 
     prefixes = [
@@ -850,6 +900,49 @@ def delete_client_document(hashed_email: str, threadid: str) -> None:
             if filename.startswith(threadid + "_") or filename.startswith(threadid):
                 s3.delete_object(Bucket=bucket_name, Key=key)
 
+def delete_accountant_document(hashed_email: str, id: str) -> None:
+    """
+    Deletes a client document metadata and associated PDFs in S3.
+
+    hashed_email (str): The hashed email identifier
+    threadid (str): The thread ID of the document to delete
+
+    Returns:
+        None
+    """
+    if not id:
+        raise HTTPException(status_code=400, detail="Missing id")
+
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    doc_index = next(
+        (i for i, d in enumerate(documents) if d.get("id") == id), None
+    )
+    print(documents)
+    if doc_index is None:
+        raise HTTPException(
+            status_code=404, detail=f"Document with threadid '{id}' not found"
+        )
+
+    doc_to_delete = documents.pop(doc_index)
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+
+    category = doc_to_delete.get("category", "Uncategorized")
+    hashed_email = hash_email(hashed_email)
+
+    prefixes = [
+        f"{hashed_email}/categorised/{category}/pdfs/",
+        f"{hashed_email}/categorised/{category}/truncated/",
+    ]
+
+    for prefix in prefixes:
+        s3_objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+        files = s3_objects.get("Contents", [])
+
+        for obj in files:
+            key = obj["Key"]
+            filename = key.split("/")[-1]
+            if filename.startswith(id + "_") or filename.startswith(id):
+                s3.delete_object(Bucket=bucket_name, Key=key)
 
 def delete_email_documents(hashed_email: str) -> None:
     """

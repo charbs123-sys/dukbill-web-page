@@ -19,3 +19,4 @@ Pillow
 reportlab
 httpx
 azure-identity
+schedule
