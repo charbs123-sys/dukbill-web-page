@@ -931,6 +931,13 @@ async def verify_client_documents(
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
 
+    is_broker_access = get_client_broker_list(client_id)
+    for client_brokers in is_broker_access:
+        if client_brokers.get("broker_id") == broker[
+            "broker_id"
+        ] and not client_brokers.get("brokerAccess", False):
+            return {"error": "Access denied"}
+
     broker_verify = toggle_client_verification(client_id, broker["broker_id"])
     if broker_verify:
         send_broker_to_client(
@@ -1137,7 +1144,6 @@ async def get_client_accountant_dashboard(client_id: int, user=Depends(get_curre
         return {"error": "Access denied"}
     client_user = get_user_from_client(client_id)
     is_accountant_access = get_accountant_clients_list(client["client_id"])
-
 
     # find the accountant and determine if they have access
     for client_accountants in is_accountant_access:
