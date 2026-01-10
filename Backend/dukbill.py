@@ -68,6 +68,7 @@ from fastapi import (
     HTTPException,
     Request,
     UploadFile,
+    Request
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -95,6 +96,9 @@ from helpers.xero_helpers import (
 )
 
 from helpers.helper import get_email_domain
+from logging.logging_config import setup_logging
+from logging.request_context import register_request_context
+from logging.logging_helper import log_event
 
 # ------------------------
 # Model Imports
@@ -173,7 +177,9 @@ initialize_database()
 # Security dependency
 security = HTTPBearer()
 
-
+# Initialize logger
+logger = setup_logging()
+register_request_context(app)
 # ------------------------
 # Pydantic Models
 # ------------------------
@@ -402,7 +408,6 @@ async def complete_profile(profile_data: dict, user=Depends(get_current_user)) -
 # Handling Emails
 # ------------------------
 
-
 @app.post("/add/email")
 async def add_email(email: str, user=Depends(get_current_user)):
     """
@@ -505,7 +510,7 @@ async def get_client_documents(user=Depends(get_current_user)):
 
 
 @app.post("/clients/category/documents")
-async def get_category_documents(request: dict, user=Depends(get_current_user)):
+async def get_category_documents(request: dict, http_request: Request, user=Depends(get_current_user)):
     """
     Fetching documents of an individual category
 
@@ -558,7 +563,18 @@ async def get_category_documents(request: dict, user=Depends(get_current_user)):
                 cat_data = doc.get("category_data", {}).get("document_type")
                 if  cat_data is not None and cat_data != filter_category:
                     documents.remove(doc)
-        
+
+    log_event(
+        http_request,
+        event="document_access",
+        message={
+            "user_id": user_obj["user_id"],
+            "category": category,
+            "document_count": len(documents),
+            "action": "accessed category documents"
+        }
+    )
+
     return documents
 
 
