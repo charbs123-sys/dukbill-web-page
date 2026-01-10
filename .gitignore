@@ -6,7 +6,9 @@ testing*
 *.pyc
 Backend/External_APIs/basiq_api.py
 Backend/.venv/
+Backend/venv/
 __pycache__/
 uv.lock
 local_mysql_rules.txt
 *.html
+Backend/.venv/bin/activate
