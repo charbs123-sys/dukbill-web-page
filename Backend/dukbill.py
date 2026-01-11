@@ -95,9 +95,9 @@ from helpers.xero_helpers import (
 )
 
 from helpers.helper import get_email_domain
-from logging.logging_config import setup_logging
-from logging.request_context import register_request_context
-from logging.logging_helper import log_event
+from Dukbill_Logging.logging_config import setup_logging
+from Dukbill_Logging.request_context import register_request_context
+from Dukbill_Logging.logging_helper import log_event
 
 # ------------------------
 # Model Imports
