@@ -78,8 +78,7 @@ from helpers.idmerit_helpers import (
     upload_idmerit_user_image_s3,
 )
 from helpers.myob_helper import build_auth_url, process_myob_data
-from helpers.sending_email import send_broker_to_client, send_dukbill_to_accountant
-
+from helpers.sending_email import send_broker_to_client
 # from shufti import shufti_url
 # from helpers.id_helpers import
 from helpers.xero_helpers import (
@@ -132,9 +131,7 @@ from users import (
     toggle_accountant_access,
     get_accountant_clients,
     get_accountant_clients_list,
-    filter_accountant_emails,
     verify_user,
-    update_next_email_date,
     set_accountant_opt_out,
 )
 
@@ -188,28 +185,6 @@ class GoogleTokenRequest(BaseModel):
 
 class XeroAuthRequest(BaseModel):
     code: str
-
-
-
-#Start up scheduler
-SYDNEY_TZ = ZoneInfo("Australia/Sydney")
-
-def run_schedule_in_tz(hour: int, minute: int):
-    """Run job daily at given time (Sydney) even if system is UTC"""
-    while True:
-        now = datetime.now(SYDNEY_TZ)
-        if now.hour == hour and now.minute == minute:
-            print("this is a trigger")
-            fetch_and_process_accountants()
-            # Sleep for one minute to avoid double‑triggering
-            time.sleep(60)
-        time.sleep(10)
-
-def start_scheduler():
-    t = threading.Thread(target=run_schedule_in_tz, args=(12, 0), daemon=True)
-    t.start()
-
-start_scheduler()
 
 
 # Work on implementing organization based login later
@@ -1331,32 +1306,6 @@ def opt_out_accountant_email_service(user=Depends(get_current_user)) -> dict:
 
     set_accountant_opt_out(accountant["accountant_id"])
     return {"status": "Successfully opted out of email service"}
-
-def fetch_and_process_accountants():
-    today = date.today()
-    accountants_to_send_ls = filter_accountant_emails(today)
-
-    for accountant in accountants_to_send_ls:
-        # accountant is an ORM object, not a dict
-        if accountant.refuse_email_service:
-            print(f"ℹ️ Skipping accountant {accountant.accountant_id}: opted out or documents collected.")
-            continue
-        accountant_details = verify_user(accountant.user_id)
-
-        if not accountant_details:
-            print(f"⚠️ Skipping accountant {accountant.accountant_id}: no user found.")
-            continue
-
-        send_dukbill_to_accountant(
-            accountant_name=accountant_details["name"],
-            accountant_email=accountant_details["email"],
-        )
-
-        update_next_email_date(
-            accountant.accountant_id, today + timedelta(days=7)
-        )
-
-    return {"status": "Accountant emails processed"}
 
 # ------------------------
 # Document Routes
