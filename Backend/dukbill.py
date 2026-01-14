@@ -1558,7 +1558,7 @@ async def edit_client_document_endpoint(
     
     log_event(
         http_request,
-        event="clientt",
+        event="client",
         message={
             "client_id": client["client_id"],
             "action": "client edited document on dashboard",
@@ -1607,7 +1607,7 @@ async def delete_client_document_endpoint(
 
     log_event(
         http_request,
-        event="clientt",
+        event="client",
         message={
             "client_id": client["client_id"],
             "action": "client deleted document on dashboard",
