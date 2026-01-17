@@ -760,22 +760,6 @@ def toggle_client_verify_db(client_id: str, broker_id: str) -> bool | None:
 # Accountant
 # ------------------------
 
-def find_accountant_emails(today: date) -> None:
-    with Session(engine) as session:
-        accountants = session.query(Accountants).filter(
-            Accountants.email_send_date == today
-        ).all()
-        return accountants
-    return None
-
-def update_accountant_email_date(accountant_id: str, next_email_date: date) -> None:
-    with Session(engine) as session:
-        accountant = session.get(Accountants, accountant_id)
-        if accountant:
-            accountant.email_send_date = next_email_date
-            session.commit()
-    return None
-
 def set_accountant_opt_out_db(accountant_id: str) -> None:
     with Session(engine) as session:
         accountant = session.get(Accountants, accountant_id)

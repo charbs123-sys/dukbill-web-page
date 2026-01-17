@@ -32,8 +32,6 @@ from Database.db_utils import (
     delete_client_accountant_db,
     get_clients_for_accountant,
     get_clients_accountant_db,
-    find_accountant_emails,
-    update_accountant_email_date,
     set_accountant_opt_out_db,
 )
 from datetime import datetime, date
@@ -333,15 +331,6 @@ def get_accountant_clients(accountant_id):
     """
     if verify_accountant(accountant_id):
         return get_clients_for_accountant(accountant_id)
-
-def filter_accountant_emails(date):
-        return find_accountant_emails(date.today())
-
-def update_next_email_date(accountant_id, next_email_date):
-    """
-    Update the next email send date for an accountant
-    """
-    return update_accountant_email_date(accountant_id, next_email_date)
 
 def set_accountant_opt_out(accountant_id):
     """
