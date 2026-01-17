@@ -449,7 +449,7 @@ async def delete_email(request: Request, user=Depends(get_current_user)):
 # Client Routes
 # ------------------------
 @app.get("/clients/dashboard")
-async def get_client_documents(user=Depends(get_current_user)):
+async def get_client_documents( http_request: Request, user=Depends(get_current_user)):
     """
     Generating the client dashboard view
 
@@ -475,6 +475,16 @@ async def get_client_documents(user=Depends(get_current_user)):
 
     # get emails, xero and myob docs
     headings = get_client_dashboard(client["client_id"], emails)
+
+    log_event(
+        http_request,
+        event="client",
+        message={
+            "client_id": client["client_id"],
+            "document_count": len(headings),
+            "action": "accessed own dashboard document data"
+        }
+    )
 
     return {
         "headings": headings,
@@ -540,9 +550,9 @@ async def get_category_documents(request: dict, http_request: Request, user=Depe
 
     log_event(
         http_request,
-        event="document_access",
+        event="client",
         message={
-            "user_id": user_obj["user_id"],
+            "client_id": client["client_id"],
             "category": category,
             "document_count": len(documents),
             "action": "accessed category documents"
@@ -592,7 +602,7 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
 
 
 @app.post("/add/broker")
-async def add_broker(broker_id: str, user=Depends(get_current_user)):
+async def add_broker(http_request: Request, broker_id: str, user=Depends(get_current_user)):
     """
     Allow clients to add brokers to their account
 
@@ -612,6 +622,17 @@ async def add_broker(broker_id: str, user=Depends(get_current_user)):
     registered_broker_id = register_client_broker(client["client_id"], broker_id)
     if not registered_broker_id:
         raise HTTPException(status_code=400, detail="Invalid broker ID")
+    
+    log_event(
+        http_request,
+        event="client",
+        message={
+            "client_id": client["client_id"],
+            "broker_id": broker_id,
+            "registered_broker_id": registered_broker_id,
+            "action": "client added broker",
+        }
+    )
 
     return {"broker_id": registered_broker_id}
 
@@ -636,7 +657,7 @@ async def get_brokers(user=Depends(get_current_user)) -> list:
 
 @app.post("/broker/access")
 async def toggle_broker_access_route(
-    broker_id: str, user=Depends(get_current_user)
+    http_request: Request, broker_id: str, user=Depends(get_current_user)
 ) -> dict:
     """
     Toggle whether broker has access to client documents
@@ -651,12 +672,24 @@ async def toggle_broker_access_route(
     auth0_id = claims["sub"]
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
+    state = toggle_broker_access(client["client_id"], broker_id)
 
-    return {"BrokerAccess": toggle_broker_access(client["client_id"], broker_id)}
+    log_event(
+        http_request,
+        event="broker_access",
+        message={
+            "client_id": client["client_id"],
+            "access_state": state,
+            "broker_id": broker_id,
+            "action": "client toggled broker access",
+        }
+    )
+
+    return {"BrokerAccess": state}
 
 
 @app.post("/client/broker/delete")
-async def delete_client_broker(broker_id: str, user=Depends(get_current_user)) -> dict:
+async def delete_client_broker(http_request: Request, broker_id: str, user=Depends(get_current_user)) -> dict:
     """
     Allowing client to remove a broker from their account
 
@@ -671,10 +704,21 @@ async def delete_client_broker(broker_id: str, user=Depends(get_current_user)) -
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     remove_client_broker(client["client_id"], broker_id)
+    
+    log_event(
+        http_request,
+        event="client",
+        message={
+            "user_id": user["user_id"],
+            "broker_id": broker_id,
+            "action": "client removed broker",
+        }
+    )
+    
     return {"message": "Broker removed successfully"}
 
 @app.post("/add/accountant")
-async def add_accountant(accountant_id: str, user=Depends(get_current_user)):
+async def add_accountant(http_request: Request, accountant_id: str, user=Depends(get_current_user)):
     """
     Allow clients to add accountants to their account
 
@@ -694,6 +738,16 @@ async def add_accountant(accountant_id: str, user=Depends(get_current_user)):
     registered_accountant_id = register_client_accountant(client["client_id"], accountant_id)
     if not registered_accountant_id:
         raise HTTPException(status_code=400, detail="Invalid accountant ID")
+
+    log_event(
+        http_request,
+        event="client",
+        message={
+            "user_id": user["user_id"],
+            "accountant_id": accountant_id,
+            "action": "client added accountant",
+        }
+    )
 
     return {"accountant_id": registered_accountant_id}
 
@@ -716,26 +770,38 @@ async def get_accountants(user=Depends(get_current_user)) -> list:
 
 @app.post("/accountant/access")
 async def toggle_accountant_access_route(
-    accountant_id: str, user=Depends(get_current_user)
+    http_request: Request, accountant_id: str, user=Depends(get_current_user)
 ) -> dict:
     """
-    Toggle whether broker has access to client documents
+    Toggle whether accountant has access to client documents
 
-    broker_id (str): The broker ID to toggle access for.
+    accountant_id (str): The accountant ID to toggle access for.
     user (tuple): The current user information from the dependency.
 
     Returns:
-        dict: Updated broker access status {BrokerAccess: bool}
+        dict: Updated accountant access status {AccountantAccess: bool}
     """
     claims, _ = user
     auth0_id = claims["sub"]
     user = find_user(auth0_id)
     client = find_client(user["user_id"])
+    state = toggle_accountant_access(client["client_id"], accountant_id)
+    
+    log_event(
+        http_request,
+        event="accountant_access",
+        message={
+            "user_id": user["user_id"],
+            "access_state": state,
+            "accountant_id": accountant_id,
+            "action": "client toggled accountant access",
+        }
+    )
 
-    return {"AccountantAccess": toggle_accountant_access(client["client_id"], accountant_id)}
+    return {"AccountantAccess": state}
 
 @app.post("/client/accountant/delete")
-async def delete_client_accountant(accountant_id: str, user=Depends(get_current_user)) -> dict:
+async def delete_client_accountant(http_request: Request, accountant_id: str, user=Depends(get_current_user)) -> dict:
     """
     Allowing client to remove an accountant from their account
 
@@ -750,7 +816,20 @@ async def delete_client_accountant(accountant_id: str, user=Depends(get_current_
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     remove_client_accountant(client["client_id"], accountant_id)
+    
+    log_event(
+        http_request,
+        event="broker_access",
+        message={
+            "user_id": user["user_id"],
+            "accountant_id": accountant_id,
+            "action": "client removed accountant",
+        }
+    )
+    
     return {"message": "Accountant removed successfully"}
+
+
 # ------------------------
 # Broker Routes
 # ------------------------
@@ -774,7 +853,7 @@ async def get_client_list(user=Depends(get_current_user)) -> dict:
 
 @app.get("/brokers/client/{client_id}/dashboard")
 async def get_client_dashboard_broker(
-    client_id: int, user=Depends(get_current_user)
+    http_request: Request, client_id: int, user=Depends(get_current_user)
 ) -> dict:
     """
     Get the client dashboard view for brokers
@@ -813,6 +892,17 @@ async def get_client_dashboard_broker(
 
     headings = get_client_dashboard(client_id, emails)
 
+    log_event(
+        http_request,
+        event="broker",
+        message={
+            "broker_id": broker["broker_id"],
+            "client_id": client["client_id"],
+            "document_count": len(headings),
+            "action": "accessed clients dashboard document data"
+        }
+    )
+
     return {
         "headings": headings,
         "BrokerAccess": is_broker_access,
@@ -822,7 +912,7 @@ async def get_client_dashboard_broker(
 
 @app.post("/brokers/client/{client_id}/category/documents")
 async def get_category_documents_broker(
-    client_id: int, request: dict, user=Depends(get_current_user)
+    http_request: Request, client_id: int, request: dict, user=Depends(get_current_user)
 ):
     """
     Fetch the documents of an individual category on client_id for brokers to view
@@ -865,12 +955,24 @@ async def get_category_documents_broker(
         get_docs_general(client["client_id"], [client_user["email"]], category)
     )
 
+    log_event(
+        http_request,
+        event="broker",
+        message={
+            "broker_id": broker["broker_id"],
+            "client_id": client["client_id"],
+            "document_category": category,
+            "document_count": len(documents),
+            "action": "accessed clients dashboard document data"
+        }
+    )
+    
     return documents
 
 
 @app.get("/brokers/client/{client_id}/documents/download")
 async def download_client_documents(
-    client_id: int, user=Depends(get_current_user)
+    http_request: Request, client_id: int, user=Depends(get_current_user)
 ) -> StreamingResponse:
     """
     Allow broker to download all client documents as a zip file
@@ -906,6 +1008,17 @@ async def download_client_documents(
     result = _invoke_zip_lambda_for(email_addresses)
     zip_key = result["zip_key"]
     filename = f"client_{client_id}_documents.zip"
+    
+    log_event(
+        http_request,
+        event="download",
+        message={
+            "broker_id": broker["broker_id"],
+            "client_id": client["client_id"],
+            "action": "downloaded all client documents as zip",
+        }
+    )
+    
     return _stream_s3_zip(zip_key, filename)
 
 
@@ -938,7 +1051,7 @@ async def verify_client_documents(
             msg_contents="Your documents have been successfully verified.",
             msg_type="verification_success",
             subject="Document Verification Success",
-        )
+        )      
     return {"broker_verify": broker_verify}
 
 
@@ -1115,7 +1228,8 @@ async def get_client_accountant_all(user=Depends(get_current_user)) -> dict:
     return {"clients": clients}
 
 @app.get("/accountants/client/{client_id}/dashboard")
-async def get_client_accountant_dashboard(client_id: int, user=Depends(get_current_user)) -> dict:
+async def get_client_accountant_dashboard(
+    http_request: Request, client_id: int, user=Depends(get_current_user)) -> dict:
     """
     Get the client dashboard view for accountants
 
@@ -1155,6 +1269,18 @@ async def get_client_accountant_dashboard(client_id: int, user=Depends(get_curre
 
     headings = get_client_dashboard(client_id, emails)
 
+
+    log_event(
+        http_request,
+        event="accountant",
+        message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
+            "document_count": len(headings),
+            "action": "accountant accessed clients dashboard document data",
+        }
+    )
+
     return {
         "headings": headings,
         "AccountantAccess": is_accountant_access,
@@ -1165,7 +1291,7 @@ async def get_client_accountant_dashboard(client_id: int, user=Depends(get_curre
 
 @app.post("/accountant/client/{client_id}/category/documents")
 async def get_category_documents_accountant(
-    client_id: int, request: dict, user=Depends(get_current_user)
+    http_request: Request, client_id: int, request: dict, user=Depends(get_current_user)
 ):
     """
     Fetch the documents of an individual category on client_id for brokers to view
@@ -1206,13 +1332,25 @@ async def get_category_documents_accountant(
     for document in documents:
         if document.get("category", "None") == "accountant":
             accountant_documents.append(document)
+            
+    log_event(
+        http_request,
+        event="accountant",
+        message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
+            "category": category,
+            "accountant_documents": len(accountant_documents),
+            "action": "accountant accessed clients dashboard documents",
+        }
+    )
+            
     return accountant_documents
-
-
 
 
 @app.post("/upload/document/card")
 async def upload_document_card(
+    http_request: Request,
     client_id: int,
     category: str = Form(...),
     category_data: str = Form(...),
@@ -1255,11 +1393,22 @@ async def upload_document_card(
 
     new_doc = await upload_client_document(email, category, category_data_dict, file)
 
+    log_event(
+        http_request,
+        event="accountant",
+        message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
+            "category": category,
+            "action": "accountant uploaded document to clients dashboard",
+        }
+    )
+
     return {"status": "success", "uploaded_document": new_doc}
 
 @app.post("/accountants/delete_document_card")
 async def delete_client_document_accountant(
-    client_id: int, threadid: str, user=Depends(get_current_user)
+    http_request: Request, client_id: int, threadid: str, user=Depends(get_current_user)
     ) -> dict:
 
     claims, _ = user
@@ -1282,6 +1431,16 @@ async def delete_client_document_accountant(
 
     hashed_email = hash_email(email)
     delete_client_document(hashed_email, threadid)
+
+    log_event(
+        http_request,
+        event="accountant",
+        message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
+            "action": "accountant deleted document on clients dashboard",
+        }
+    )
 
     return {"status": "success"}
 
@@ -1312,7 +1471,7 @@ def opt_out_accountant_email_service(user=Depends(get_current_user)) -> dict:
 # ------------------------
 @app.post("/edit/document/card")
 async def edit_client_document_endpoint(
-    updates: dict = Body(...), user=Depends(get_current_user)
+    http_request: Request, updates: dict = Body(...), user=Depends(get_current_user)
 ) -> dict:
     """
     Allow clients to edit document metadata
@@ -1326,6 +1485,7 @@ async def edit_client_document_endpoint(
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -1344,12 +1504,22 @@ async def edit_client_document_endpoint(
         raise HTTPException(status_code=400, detail="Missing hashed_email")
 
     edit_client_document(hashed_email, updates)
+    
+    log_event(
+        http_request,
+        event="client",
+        message={
+            "client_id": client["client_id"],
+            "action": "client edited document on dashboard",
+        }
+    )
+    
     return {"status": "success"}
 
 
 @app.delete("/delete/document/card")
 async def delete_client_document_endpoint(
-    request: Request, user=Depends(get_current_user)
+    http_request: Request, request: Request, user=Depends(get_current_user)
 ) -> dict:
     """
     Allow clients to delete documents
@@ -1363,6 +1533,7 @@ async def delete_client_document_endpoint(
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
     data = await request.json()
@@ -1383,11 +1554,21 @@ async def delete_client_document_endpoint(
     else:
         delete_client_document(hashed_email, threadid)
 
+    log_event(
+        http_request,
+        event="client",
+        message={
+            "client_id": client["client_id"],
+            "action": "client deleted document on dashboard",
+        }
+    )
+
     return {"status": "success"}
 
 
 @app.post("/upload/document/card")
 async def upload_document_card(
+    http_request: Request,
     category: str = Form(...),
     category_data: str = Form(...),
     file: UploadFile = File(...),
@@ -1407,6 +1588,7 @@ async def upload_document_card(
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -1419,12 +1601,21 @@ async def upload_document_card(
 
     new_doc = await upload_client_document(email, category, category_data_dict, file)
 
+    log_event(
+        http_request,
+        event="clientt",
+        message={
+            "client_id": client["client_id"],
+            "action": "client uploaded document to dashboard",
+        }
+    )
+
     return {"status": "success", "uploaded_document": new_doc}
 
 
 @app.get("/download/document")
 async def download_document(
-    id: str, category: str, hashed_email: str, user=Depends(get_current_user)
+    http_request: Request, id: str, category: str, hashed_email: str, user=Depends(get_current_user)
 ) -> dict:
     """
     Download any document by generating pre-signed URLs
@@ -1440,15 +1631,25 @@ async def download_document(
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
+    client = find_client(user_obj["user_id"])
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
         urls = get_download_urls(hashed_email, category, id)
+          
+        log_event(
+            http_request,
+            event="clientt",
+            message={
+                "client_id": client["client_id"],
+                "action": "client downloaded document",
+            }
+        )
+        
         return {"urls": urls}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
 
 # ------------------------
 # Gmail Integration
