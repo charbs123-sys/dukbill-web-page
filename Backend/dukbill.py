@@ -743,7 +743,6 @@ async def add_accountant(http_request: Request, accountant_id: str, user=Depends
         http_request,
         event="client",
         message={
-            "user_id": user["user_id"],
             "accountant_id": accountant_id,
             "action": "client added accountant",
         }
@@ -2208,4 +2207,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8080)
+
 
