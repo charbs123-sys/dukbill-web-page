@@ -1190,9 +1190,9 @@ def send_email_to_client(
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    broker = find_broker(user_obj["user_id"])
-    if not broker:
-        raise HTTPException(status_code=404, detail="Broker not found")
+    #broker = find_broker(user_obj["user_id"])
+    #if not broker:
+    #    raise HTTPException(status_code=404, detail="Broker not found")
 
     subject = f"Broker {user_obj['name']} invited you to sign up"
     body = email_data.get("body", "")
@@ -2168,3 +2168,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8080)
+
