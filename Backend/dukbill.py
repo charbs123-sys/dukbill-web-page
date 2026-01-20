@@ -1309,9 +1309,6 @@ async def get_client_accountant_dashboard(
         http_request,
         event="accountant",
         message={
-            "accountant_id": accountant["accountant_id"],
-            "client_id": client["client_id"],
-            "document_count": len(headings),
             "action": "accountant accessed clients dashboard document data",
         }
     )
@@ -1372,9 +1369,6 @@ async def get_category_documents_accountant(
         http_request,
         event="accountant",
         message={
-            "accountant_id": accountant["accountant_id"],
-            "client_id": client["client_id"],
-            "category": category,
             "accountant_documents": len(accountant_documents),
             "action": "accountant accessed clients dashboard documents",
         }
@@ -1432,9 +1426,6 @@ async def upload_document_card(
         http_request,
         event="accountant",
         message={
-            "accountant_id": accountant["accountant_id"],
-            "client_id": client["client_id"],
-            "category": category,
             "action": "accountant uploaded document to clients dashboard",
         }
     )
@@ -1471,8 +1462,6 @@ async def delete_client_document_accountant(
         http_request,
         event="accountant",
         message={
-            "accountant_id": accountant["accountant_id"],
-            "client_id": client["client_id"],
             "action": "accountant deleted document on clients dashboard",
         }
     )
@@ -2203,5 +2192,6 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8080)
+
 
 
