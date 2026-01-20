@@ -790,7 +790,6 @@ async def toggle_accountant_access_route(
         http_request,
         event="accountant_access",
         message={
-            "user_id": user["user_id"],
             "access_state": state,
             "accountant_id": accountant_id,
             "action": "client toggled accountant access",
@@ -820,7 +819,6 @@ async def delete_client_accountant(http_request: Request, accountant_id: str, us
         http_request,
         event="broker_access",
         message={
-            "user_id": user["user_id"],
             "accountant_id": accountant_id,
             "action": "client removed accountant",
         }
@@ -935,8 +933,6 @@ async def get_client_dashboard_broker(
         http_request,
         event="broker",
         message={
-            "broker_id": broker["broker_id"],
-            "client_id": client["client_id"],
             "document_count": len(headings),
             "action": "accessed clients dashboard document data"
         }
