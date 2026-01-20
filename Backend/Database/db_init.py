@@ -96,7 +96,7 @@ class IDMERITVerification(Base):
 
 def initialize_database():
     """Create all tables if they don't exist"""
-    #Base.metadata.drop_all(engine)
-    #print("deleted DB")
+    Base.metadata.drop_all(engine)
+    print("deleted DB")
     Base.metadata.create_all(engine)
     print("SQL Database initialized.")
