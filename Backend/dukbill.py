@@ -78,7 +78,7 @@ from helpers.idmerit_helpers import (
     upload_idmerit_user_image_s3,
 )
 from helpers.myob_helper import build_auth_url, process_myob_data
-from helpers.sending_email import send_broker_to_client
+from helpers.sending_email import send_broker_to_client, send_client_to_accountant
 # from shufti import shufti_url
 # from helpers.id_helpers import
 from helpers.xero_helpers import (
@@ -828,6 +828,46 @@ async def delete_client_accountant(http_request: Request, accountant_id: str, us
     )
     
     return {"message": "Accountant removed successfully"}
+
+
+@app.post("/client/accountant/{accountant_id}/email/send")
+def send_email_to_accountant(
+    accountant_first_name: str,
+    accountant_email: str,
+    email_data: dict,
+    user=Depends(get_current_user),
+) -> dict:
+    """
+    Allow clients to send emails to accountants
+
+    client_id (int): The client ID to send email to.
+    email_data (dict): The email data containing subject and body.
+    user (tuple): The current user information from the dependency.
+
+    Returns:
+        dict: Success message on succesful sending
+    """
+    claims, _ = user
+    auth0_id = claims["sub"]
+    user_obj = find_user(auth0_id)
+    #broker = find_broker(user_obj["user_id"])
+    #print(broker)
+    #if not broker:
+    #    raise HTTPException(status_code=404, detail="Broker not found")
+
+    subject = f"Broker {user_obj['name']} invited you to sign up"
+    body = email_data.get("body", "")
+    send_client_to_accountant(
+        user_obj["name"],
+        user_obj["email"],
+        accountant_first_name,
+        accountant_email,
+        body,
+        "accountant_onboarding",
+        subject,
+    )
+    return {"message": "Email sent successfully"}
+
 
 
 # ------------------------
