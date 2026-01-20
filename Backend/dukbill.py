@@ -689,8 +689,11 @@ async def add_accountant(accountant_id: str, user=Depends(get_current_user)):
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     if not client:
+        print("entered here")
         raise HTTPException(status_code=404, detail="Client not found")
-
+    print("before registering")
+    print(client["client_id"])
+    print(accountant_id)
     registered_accountant_id = register_client_accountant(client["client_id"], accountant_id)
     if not registered_accountant_id:
         raise HTTPException(status_code=400, detail="Invalid accountant ID")
