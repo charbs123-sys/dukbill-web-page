@@ -324,6 +324,7 @@ async def fetch_user_profile(user=Depends(get_current_user)):
         "picture": user_obj["picture"],
         "user_type": user_type,
         "email_verified": jwt_info["email_verified"],
+        "email": user_obj["email"],
     }
 
 
@@ -475,7 +476,8 @@ async def get_client_documents( http_request: Request, user=Depends(get_current_
 
     # get emails, xero and myob docs
     headings = get_client_dashboard(client["client_id"], emails)
-
+    print("this is headings")
+    print(headings)
     log_event(
         http_request,
         event="client",
@@ -709,7 +711,7 @@ async def delete_client_broker(http_request: Request, broker_id: str, user=Depen
         http_request,
         event="client",
         message={
-            "user_id": user["user_id"],
+            #"user_id": user["user_id"],
             "broker_id": broker_id,
             "action": "client removed broker",
         }
@@ -993,6 +995,26 @@ async def get_category_documents_broker(
         get_docs_general(client["client_id"], [client_user["email"]], category)
     )
 
+    hashed_client_email = hash_email(client_user["email"])
+
+    if category == "accountant":
+        return documents
+
+    elif category.startswith("accountant"):
+
+        subcategory = ""
+        documents.extend(
+            get_docs_accountant(client["client_id"], hashed_client_email, "accountant", subcategory)
+        )
+
+        subcategory = category.split("-")
+        if len(subcategory) > 1:
+            filter_category = subcategory[1]
+            for doc in documents:
+                cat_data = doc.get("category_data", {}).get("document_type")
+                if  cat_data is not None and cat_data != filter_category:
+                    documents.remove(doc)
+
     log_event(
         http_request,
         event="broker",
@@ -1122,7 +1144,7 @@ async def add_document_comment(
 
     category = request.get("category")
     hashed_user_email = request.get("hashed_email")
-
+    print(category)
     if category.startswith("xero_"):
         add_comment_docs_general(
             client_id,
@@ -1148,6 +1170,11 @@ async def add_document_comment(
             "idmerit_docs",
         )
     else:
+        print("entered here")
+        print(client_id)
+        print(hashed_user_email)
+        print(request.get("comment", ""))
+        print(request.get("threadid", None))
         add_comment_client_document(
             client_id,
             hashed_user_email,
@@ -1187,7 +1214,7 @@ async def remove_document_comment(
 
     category = request.get("category")
     hashed_user_email = request.get("hashed_email")
-
+    print(request.get("threadid", None))
     if category.startswith("xero_"):
         remove_comment_docs_general(
             client_id, hashed_user_email, category, "xero_reports"
@@ -1362,6 +1389,7 @@ async def get_category_documents_accountant(
         emails.append({"email_address": client_user["email"]})
 
     documents = get_client_category_documents(client_id, emails, category)
+    print(documents)
 
     accountant_documents = []
     for document in documents:
@@ -1543,10 +1571,10 @@ async def edit_client_document_endpoint(
     
     return {"status": "success"}
 
-
+#deleted http request here
 @app.delete("/delete/document/card")
 async def delete_client_document_endpoint(
-    http_request: Request, request: Request, user=Depends(get_current_user)
+    request: Request, user=Depends(get_current_user)
 ) -> dict:
     """
     Allow clients to delete documents
@@ -1566,21 +1594,28 @@ async def delete_client_document_endpoint(
     data = await request.json()
     threadid = data.get("id")
     hashed_email = data.get("hashed_email")
+    print(data)
+    print(hashed_email)
+    print("this is threadid")
+    print(threadid)
     if not threadid or not hashed_email:
+        print("exit here")
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
 
     # Check if it's a verified identity document by checking the id
-    if threadid.startswith("idmerit_"):
+    if "idmerit_" in threadid:
         delete_docs_general(threadid, hashed_email, "idmerit_docs")
     # Check if it's a Xero report
-    elif threadid.startswith("xero_"):
+    elif "xero_" in threadid:
+        print("entered here")
         delete_docs_general(threadid, hashed_email, "xero_reports")
     # Check if it's a MYOB report
-    elif threadid.startswith("Broker_"):
+    elif "Broker_" in threadid:
         delete_docs_general(threadid, hashed_email, "myob_reports")
     else:
         delete_client_document(hashed_email, threadid)
 
+    '''
     log_event(
         http_request,
         event="client",
@@ -1589,13 +1624,12 @@ async def delete_client_document_endpoint(
             "action": "client deleted document on dashboard",
         }
     )
-
+    '''
     return {"status": "success"}
 
-
-@app.post("/upload/document/card")
+#Deleted http request
+@app.post("/client/upload/document/card")
 async def upload_document_card(
-    http_request: Request,
     category: str = Form(...),
     category_data: str = Form(...),
     file: UploadFile = File(...),
@@ -1612,6 +1646,7 @@ async def upload_document_card(
     Returns:
         dict: Success message with uploaded document information {status: "success", uploaded_document: {...}}
     """
+    print("entered")
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -1628,6 +1663,7 @@ async def upload_document_card(
 
     new_doc = await upload_client_document(email, category, category_data_dict, file)
 
+    '''
     log_event(
         http_request,
         event="clientt",
@@ -1636,7 +1672,8 @@ async def upload_document_card(
             "action": "client uploaded document to dashboard",
         }
     )
-
+    '''
+    
     return {"status": "success", "uploaded_document": new_doc}
 
 
@@ -1664,7 +1701,7 @@ async def download_document(
 
     try:
         urls = get_download_urls(hashed_email, category, id)
-          
+        '''
         log_event(
             http_request,
             event="clientt",
@@ -1673,7 +1710,7 @@ async def download_document(
                 "action": "client downloaded document",
             }
         )
-        
+        '''
         return {"urls": urls}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1921,16 +1958,20 @@ async def connect_xero(user=Depends(get_current_user)) -> dict:
     return {"auth_url": auth_url}
 
 
+from fastapi import BackgroundTasks, HTTPException
+from fastapi.responses import RedirectResponse
+import requests
+import time
+
 @app.get("/callback/xero")
-async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
+async def callback_xero(
+    code: str = "",
+    state: str = "",
+    background_tasks: BackgroundTasks = None
+) -> RedirectResponse:
     """
-    Handle OAuth callback from Xero
-
-    code (str): The authorization code from Xero.
-    state (str): The encrypted state containing the user token.
-
-    Returns:
-        RedirectResponse: Redirects to the frontend after processing
+    Handle OAuth callback from Xero asynchronously,
+    scheduling PDF/report generation as a background task.
     """
 
     decrypted_key = Encryption_function.decrypt(state)
@@ -1946,7 +1987,7 @@ async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
         raise HTTPException(status_code=404, detail="User not found")
     hashed_email = hash_email(user_obj["email"])
 
-    # Exchange code for tokens
+    # Exchange authorization code for tokens
     token_response = requests.post(
         TOKEN_URL,
         headers={
@@ -1964,14 +2005,13 @@ async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
     if token_response.status_code != 200:
         raise HTTPException(400, f"Token exchange failed: {token_response.text}")
 
-    # Save tokens
     token_data = token_response.json()
     tokens["access_token"] = token_data["access_token"]
     tokens["refresh_token"] = token_data.get("refresh_token")
     tokens["expires_at"] = int(time.time()) + int(token_data.get("expires_in", 1800))
     tokens["scope"] = token_data.get("scope", "")
 
-    # Get tenant/organization connections
+    # Fetch connections
     connections_response = requests.get(
         "https://api.xero.com/connections",
         headers={"Authorization": f"Bearer {tokens['access_token']}"},
@@ -1987,11 +2027,10 @@ async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
     if not connections:
         return RedirectResponse(url=REDIRECT_URL, status_code=303)
 
-    # Use first organization
     tenant_id = connections[0]["tenantId"]
     org_name = connections[0]["tenantName"]
 
-    # Fetch all data
+    # Fetch full data synchronously (needed immediately)
     all_data = fetch_all_data(tenant_id)
     preview = generate_xero_preview(all_data)
 
@@ -2005,18 +2044,34 @@ async def callback_xero(code: str = "", state: str = "") -> RedirectResponse:
     if all_data.get("errors"):
         result["errors"] = all_data["errors"]
 
-    # Generate all PDF reports
+    # --- Schedule background job ---
+    background_tasks.add_task(
+        perform_xero_background_tasks,
+        result,
+        hashed_email
+    )
+
+    # Finish OAuth callback immediately
+    return RedirectResponse(url=REDIRECT_URL, status_code=303)
+
+def perform_xero_background_tasks(result, hashed_email):
+    """Runs expensive tasks in the background (PDF gen, S3 upload, JSON update)."""
     try:
         s3_keys = generate_all_reports_xero(result, hashed_email)
         result["pdf_reports"] = s3_keys
         result["s3_bucket"] = bucket_name
     except Exception as e:
         result["pdf_error"] = str(e)
+        print(f"Error in PDF generation for {hashed_email}: {e}")
 
-    update_anonymized_json_general(hashed_email, "xero_reports", EXPECTED_REPORTS_XERO)
-
-    return RedirectResponse(url=REDIRECT_URL, status_code=303)
-
+    try:
+        update_anonymized_json_general(
+            hashed_email,
+            "xero_reports",
+            EXPECTED_REPORTS_XERO
+        )
+    except Exception as e:
+        print(f"Error updating anonymized JSON for {hashed_email}: {e}")
 
 @app.get("/xero/connections")
 async def get_xero_connections(user=Depends(get_current_user)) -> dict:

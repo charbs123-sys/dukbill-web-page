@@ -8,12 +8,14 @@ BG_BADGE = "#e6f7f3"
 TEXT_DARK = "#0f172a"
 
 
+from datetime import date
+
 def dukbill_style_html(
     broker_name: str,
     broker_email: str,
     client_first_name: str,
     msg_contents: str,
-    cta_url: str | None = "https://dukbillapp.com/",
+    cta_url: str | None = "https://dukbillapp.com/signup",
     headline: str | None = None,  # optional override for the header line
     today_str: str | None = None,  # for testing/preview override
 ) -> str:
@@ -51,6 +53,7 @@ def dukbill_style_html(
     <tr>
       <td align="center" style="padding:36px 16px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:100%;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+          
           <tr>
             <td style="padding-bottom:12px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
@@ -74,29 +77,12 @@ def dukbill_style_html(
             <td>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:14px;padding:28px;box-shadow:0 1px 2px rgba(16,24,40,0.04),0 4px 12px rgba(16,24,40,0.06);">
 
-                <tr>
-                  <td style="padding:12px 0 4px 0;">
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">Hi {
-        esc(client_first_name)
-    },</p>
-                  </td>
-                </tr>
-
+                <!-- Message body only -->
                 <tr>
                   <td style="padding:8px 0 12px 0;">
                     <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">{
         esc(msg_contents).replace("\\n", "<br>")
     }</p>
-                  </td>
-                </tr>
-
-                <tr>
-                  <td style="padding:12px 0 0 0;">
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">
-                      Best regards,<br>
-                      <strong>{esc(broker_name)}</strong><br>
-                      <span style="color:#6b7280;">{esc(broker_email)}</span>
-                    </p>
                   </td>
                 </tr>
 
@@ -167,9 +153,7 @@ def send_broker_to_client(
 
     # Plain-text fallback (for older clients)
     plain = (
-        f"Hi {client_first_name},\n\n"
         f"{msg_contents}\n\n"
-        f"Best regards,\n{broker_name}\n{broker_email}\n"
     )
     msg.set_content(plain)
 
@@ -180,7 +164,7 @@ def send_broker_to_client(
             broker_email=broker_email,
             client_first_name=client_first_name,
             msg_contents=msg_contents,
-            cta_url=cta_url or "https://dukbillapp.com",
+            cta_url=cta_url or "https://dukbillapp.com/signup",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
     elif msg_type == "verification_success":
@@ -489,9 +473,7 @@ def send_dukbill_to_accountant(
 
     # Plain-text fallback (for older email clients)
     plain = (
-        f"Hi {accountant_name},\n\n"
         f"{msg_contents}\n\n"
-        "Best regards,\nThe Dukbill Team\nsupport@dukbillapp.com\n"
     )
     msg.set_content(plain)
 
@@ -568,12 +550,12 @@ def send_client_to_accountant(
         )
     elif msg_type == "accountant_onboarding":
         # HTML version for accountant onboarding
-        html = dukbill_style_html_accountant(
+        html = dukbill_style_html(
             broker_name=accountant_name,
             broker_email=accountant_email,
             client_first_name=client_first_name,
             msg_contents=msg_contents,
-            cta_url=cta_url or "https://dukbillapp.com/accountant-onboarding",
+            cta_url=cta_url or "https://dukbillapp.com/signup",
             headline="Welcome to Dukbill as an Accountant!",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
