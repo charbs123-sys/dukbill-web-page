@@ -4,6 +4,7 @@ import logging
 import os
 import uuid
 
+from annotated_types import doc
 from botocore.exceptions import ClientError
 from config import CLOUDFRONT_DOMAIN, DOCUMENT_CATEGORIES
 from Database.db_utils import verify_client_by_id
@@ -252,7 +253,6 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
                 continue
 
             urls = [get_cloudfront_url(k) for k in pdf_keys]
-
             all_filtered_docs.append(
                 {
                     "id": threadid,
@@ -260,6 +260,7 @@ def get_client_category_documents(client_id: str, emails: list, category: str) -
                     "category_data": doc.get("category_data"),
                     "url": urls,
                     "hashed_email": hashed_email,
+                    "broker_comment": doc.get("broker_comment", ""),
                 }
             )
 
@@ -388,6 +389,8 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
         return []
     # Get the filename for the requested category
     doc_category_name = category_to_filename.get(category)
+
+    
     # If category is not any of the above report types, return empty list
     if not doc_category_name:
         return []
@@ -399,6 +402,13 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
             else email_entry
         )
         hashed_email = hash_email(email)
+
+        try:
+            documents = get_json_file(
+                hashed_email, "/broker_anonymized/emails_anonymized.json"
+            )
+        except HTTPException:
+            continue
 
         try:
             s3_objects = s3.list_objects_v2(
@@ -418,6 +428,7 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
             # Only create entry if matching files found
             if doc_type_keys:
                 urls = [get_cloudfront_url(k) for k in doc_type_keys]
+            
 
             docs.append(
                 {

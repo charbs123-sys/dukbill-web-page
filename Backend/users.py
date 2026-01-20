@@ -279,6 +279,7 @@ def register_client_accountant(client_id, accountant_id):
     """
     Intermediate function to add a new client-accountant relationship
     """
+    print(verify_accountant(accountant_id))
     if verify_client(client_id) and verify_accountant(accountant_id):
         return add_client_accountant(client_id, accountant_id)
     else:
