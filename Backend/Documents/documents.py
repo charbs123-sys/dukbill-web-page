@@ -324,7 +324,7 @@ def get_docs_accountant(client_id: str, hashed_client_email: str, category: str,
 
 def update_anonymized_json_general(
     hashed_email: str, parent_header: str, sibling_header: list[str]
-) -> None:
+) -> bool:
     """
     updating anonymized json for myob and xero
 
@@ -333,11 +333,22 @@ def update_anonymized_json_general(
     sibling_header (list[str]): List of sibling filenames to add under the parent header
 
     Returns:
-        None
+        bool    
     """
     # Implementation for updating anonymized JSON
     ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
     documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    
+    for doc in documents:
+        if parent_header in doc:
+            doc[parent_header] = [
+                {"filename": sibling} for sibling in sibling_header
+            ]
+            save_json_file(
+                hashed_email, "/broker_anonymized/emails_anonymized.json", documents
+            )
+            return True
+    
     documents.append(
         {parent_header: [{"filename": sibling} for sibling in sibling_header]}
     )
@@ -354,8 +365,20 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
 
     docs = []
 
+    hashed_email = hash_email(emails[0])
+    documents = get_json_file(
+        hashed_email, "/broker_anonymized/emails_anonymized.json"
+    )
+    
+
     # determine type of document to fetch
     if category.startswith("Broker_"):
+        for doc in documents:
+            if doc.get("myob_reports"):
+                for report in doc.get("myob_reports", []):
+                    if report.get("filename") == category:
+                        broker_comment = report.get("broker_comment", "")
+
         prefix = "myob_reports"
         category_label = "MYOB Reports"
         category_to_filename = {
@@ -365,6 +388,11 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
             "Broker_Purchases_Summary.pdf": "Purchases Summary",
         }
     elif category.startswith("xero_"):
+        for doc in documents:
+            if doc.get("xero_reports"):
+                for report in doc.get("xero_reports", []):
+                    if report.get("filename") == category:
+                        broker_comment = report.get("broker_comment", "")
         prefix = "xero_reports"
         category_label = "Xero Reports"
         category_to_filename = {
@@ -378,6 +406,11 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
             "xero_transactions_report.pdf": "Transactions Report",
         }
     elif category.startswith("idmerit_"):
+        for doc in documents:
+            if doc.get("idmerit_docs"):
+                for report in doc.get("idmerit_docs", []):
+                    if report.get("filename") == category:
+                        broker_comment = report.get("broker_comment", "")
         prefix = "idmerit_docs"
         category_label = "Identity Verification"
         category_to_filename = {
@@ -401,14 +434,9 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
             if isinstance(email_entry, dict)
             else email_entry
         )
-        hashed_email = hash_email(email)
+        
 
-        try:
-            documents = get_json_file(
-                hashed_email, "/broker_anonymized/emails_anonymized.json"
-            )
-        except HTTPException:
-            continue
+
 
         try:
             s3_objects = s3.list_objects_v2(
@@ -439,6 +467,7 @@ def get_docs_general(client_id: str, emails: list, category: str) -> list:
                     },
                     "url": urls,
                     "hashed_email": hashed_email,
+                    "broker_comment": broker_comment,
                 }
             )
 
@@ -743,8 +772,8 @@ def add_comment_docs_general(
     for doc in documents:
         for report in doc.get(parent_header, []):
             if report.get("filename") == category:
-                existing_comments = report.get("broker_comment", "")
-                report["broker_comment"] = existing_comments + "\n" + comment
+                #existing_comments = report.get("broker_comment", "")
+                report["broker_comment"] = comment
                 updated = True
                 break
         if updated:
