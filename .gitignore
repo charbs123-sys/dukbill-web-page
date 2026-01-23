@@ -12,3 +12,4 @@ uv.lock
 local_mysql_rules.txt
 *.html
 Backend/.venv/bin/activate
+Backend/unit_tests/test_sample.py
