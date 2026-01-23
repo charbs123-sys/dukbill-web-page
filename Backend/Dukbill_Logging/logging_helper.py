@@ -15,7 +15,6 @@ def log_event(
         "request_id": getattr(request.state, "request_id", None),
         "method": request.method,
         "path": request.url.path,
-        "user_id": request.headers.get("X-User-Id"),
         "ip": request.headers.get("X-Forwarded-For", request.client.host if request.client else None),
     }
 

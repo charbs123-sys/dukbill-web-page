@@ -155,7 +155,6 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5000",
-    "https://*.replit.dev",
     "https://dukbillapp.com",
 ]
 
@@ -166,6 +165,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 
 # Initialize database
 initialize_database()
@@ -476,6 +477,8 @@ async def get_client_documents( http_request: Request, user=Depends(get_current_
  
     # get emails, xero and myob docs
     headings = get_client_dashboard(client["client_id"], emails)
+    # print("this is headings")
+    # print(headings)
     log_event(
         http_request,
         event="client",
@@ -709,7 +712,7 @@ async def delete_client_broker(http_request: Request, broker_id: str, user=Depen
         http_request,
         event="client",
         message={
-            #"user_id": user["user_id"],
+            "client_id": client["client_id"],
             "broker_id": broker_id,
             "action": "client removed broker",
         }
@@ -733,11 +736,11 @@ async def add_accountant(http_request: Request, accountant_id: str, user=Depends
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     if not client:
-        print("entered here")
+        # print("entered here")
         raise HTTPException(status_code=404, detail="Client not found")
-    print("before registering")
-    print(client["client_id"])
-    print(accountant_id)
+    # print("before registering")
+    # print(client["client_id"])
+    # print(accountant_id)
     registered_accountant_id = register_client_accountant(client["client_id"], accountant_id)
     if not registered_accountant_id:
         raise HTTPException(status_code=400, detail="Invalid accountant ID")
@@ -746,6 +749,7 @@ async def add_accountant(http_request: Request, accountant_id: str, user=Depends
         http_request,
         event="client",
         message={
+            "client_id": client["client_id"],
             "accountant_id": accountant_id,
             "action": "client added accountant",
         }
@@ -793,6 +797,7 @@ async def toggle_accountant_access_route(
         http_request,
         event="accountant_access",
         message={
+            "client_id": client["client_id"],
             "access_state": state,
             "accountant_id": accountant_id,
             "action": "client toggled accountant access",
@@ -822,6 +827,7 @@ async def delete_client_accountant(http_request: Request, accountant_id: str, us
         http_request,
         event="broker_access",
         message={
+            "client_id": client["client_id"],
             "accountant_id": accountant_id,
             "action": "client removed accountant",
         }
@@ -887,7 +893,7 @@ async def get_client_list(user=Depends(get_current_user)) -> dict:
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
     broker = find_broker(user_obj["user_id"])
-    clients = get_broker_clients(broker["broker_id"])
+    clients = get_broker_clients(broker["broker_id"])    
     return {"clients": clients}
 
 
@@ -936,6 +942,8 @@ async def get_client_dashboard_broker(
         http_request,
         event="broker",
         message={
+            "broker_id": broker["broker_id"],
+            "client_id": client["client_id"],
             "document_count": len(headings),
             "action": "accessed clients dashboard document data"
         }
@@ -1142,7 +1150,7 @@ async def add_document_comment(
 
     category = request.get("category")
     hashed_user_email = request.get("hashed_email")
-    print(category)
+    # print(category)
     if category.startswith("xero_"):
         add_comment_docs_general(
             client_id,
@@ -1168,11 +1176,11 @@ async def add_document_comment(
             "idmerit_docs",
         )
     else:
-        print("entered here")
-        print(client_id)
-        print(hashed_user_email)
-        print(request.get("comment", ""))
-        print(request.get("threadid", None))
+        # print("entered here")
+        # print(client_id)
+        # print(hashed_user_email)
+        # print(request.get("comment", ""))
+        # print(request.get("threadid", None))
         add_comment_client_document(
             client_id,
             hashed_user_email,
@@ -1212,7 +1220,7 @@ async def remove_document_comment(
 
     category = request.get("category")
     hashed_user_email = request.get("hashed_email")
-    print(request.get("threadid", None))
+    # print(request.get("threadid", None))
     if category.startswith("xero_"):
         remove_comment_docs_general(
             client_id, hashed_user_email, category, "xero_reports"
@@ -1337,6 +1345,8 @@ async def get_client_accountant_dashboard(
         http_request,
         event="accountant",
         message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
             "action": "accountant accessed clients dashboard document data",
         }
     )
@@ -1387,7 +1397,7 @@ async def get_category_documents_accountant(
         emails.append({"email_address": client_user["email"]})
 
     documents = get_client_category_documents(client_id, emails, category)
-    print(documents)
+    # print(documents)
 
     accountant_documents = []
     for document in documents:
@@ -1398,6 +1408,8 @@ async def get_category_documents_accountant(
         http_request,
         event="accountant",
         message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
             "accountant_documents": len(accountant_documents),
             "action": "accountant accessed clients dashboard documents",
         }
@@ -1455,6 +1467,8 @@ async def upload_document_card(
         http_request,
         event="accountant",
         message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
             "action": "accountant uploaded document to clients dashboard",
         }
     )
@@ -1491,6 +1505,8 @@ async def delete_client_document_accountant(
         http_request,
         event="accountant",
         message={
+            "accountant_id": accountant["accountant_id"],
+            "client_id": client["client_id"],
             "action": "accountant deleted document on clients dashboard",
         }
     )
@@ -1557,19 +1573,20 @@ async def edit_client_document_endpoint(
         raise HTTPException(status_code=400, detail="Missing hashed_email")
 
     edit_client_document(hashed_email, updates)
-    
+    card_id = updates.get("id")
+
     log_event(
         http_request,
         event="client",
         message={
             "client_id": client["client_id"],
+            "document_id": card_id,
             "action": "client edited document on dashboard",
         }
     )
     
     return {"status": "success"}
 
-#deleted http request here
 @app.delete("/delete/document/card")
 async def delete_client_document_endpoint(
     request: Request, user=Depends(get_current_user)
@@ -1592,10 +1609,10 @@ async def delete_client_document_endpoint(
     data = await request.json()
     threadid = data.get("id")
     hashed_email = data.get("hashed_email")
-    print(data)
-    print(hashed_email)
-    print("this is threadid")
-    print(threadid)
+    # print(data)
+    # print(hashed_email)
+    # print("this is threadid")
+    # print(threadid)
     if not threadid or not hashed_email:
         print("exit here")
         raise HTTPException(status_code=400, detail="Missing id or hashed_email")
@@ -1605,7 +1622,7 @@ async def delete_client_document_endpoint(
         delete_docs_general(threadid, hashed_email, "idmerit_docs")
     # Check if it's a Xero report
     elif "xero_" in threadid:
-        print("entered here")
+        # print("entered here")
         delete_docs_general(threadid, hashed_email, "xero_reports")
     # Check if it's a MYOB report
     elif "Broker_" in threadid:
@@ -1613,21 +1630,22 @@ async def delete_client_document_endpoint(
     else:
         delete_client_document(hashed_email, threadid)
 
-    '''
     log_event(
-        http_request,
+        request,
         event="client",
         message={
             "client_id": client["client_id"],
+            "document_id": threadid,
             "action": "client deleted document on dashboard",
         }
     )
-    '''
+    
     return {"status": "success"}
 
 #Deleted http request
 @app.post("/client/upload/document/card")
 async def upload_document_card(
+    http_request: Request,
     category: str = Form(...),
     category_data: str = Form(...),
     file: UploadFile = File(...),
@@ -1644,7 +1662,7 @@ async def upload_document_card(
     Returns:
         dict: Success message with uploaded document information {status: "success", uploaded_document: {...}}
     """
-    print("entered")
+    # print("entered")
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
@@ -1661,16 +1679,14 @@ async def upload_document_card(
 
     new_doc = await upload_client_document(email, category, category_data_dict, file)
 
-    '''
     log_event(
         http_request,
-        event="clientt",
+        event="client",
         message={
             "client_id": client["client_id"],
             "action": "client uploaded document to dashboard",
         }
     )
-    '''
     
     return {"status": "success", "uploaded_document": new_doc}
 
@@ -1693,22 +1709,21 @@ async def download_document(
     claims, _ = user
     auth0_id = claims["sub"]
     user_obj = find_user(auth0_id)
-    client = find_client(user_obj["user_id"])
     if not user_obj:
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
         urls = get_download_urls(hashed_email, category, id)
-        '''
+        
         log_event(
             http_request,
-            event="clientt",
+            event="user",
             message={
-                "client_id": client["client_id"],
-                "action": "client downloaded document",
+                "user_id": user_obj["user_id"],
+                "action": "user downloaded document",
             }
         )
-        '''
+        
         return {"urls": urls}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1860,7 +1875,7 @@ async def send_verification_text(request: Request, user=Depends(get_current_user
 @app.post("/idmerit/callback")
 async def idmerit_callback(request: Request):
     response_data = await request.json()
-    print(response_data)
+    # print(response_data)
     client_info = idmerit_fetch_clientid(response_data["requestId"])
     client_id = client_info.get("client_id")
     claims = verify_client(client_id)
@@ -2253,8 +2268,4 @@ async def health_check():
 # ------------------------
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8080)
-
-
-
