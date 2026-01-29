@@ -1,8 +1,10 @@
+# helpers/xero_helpers.py
 import base64
 import os
 import time
-
+from datetime import datetime, timedelta
 import requests
+from fastapi import HTTPException
 from External_APIs.xero_pdf_generation import (
     generate_accounts_report,
     generate_bank_transfers_report,
@@ -13,661 +15,557 @@ from External_APIs.xero_pdf_generation import (
     generate_reports_summary,
     generate_transactions_report,
 )
-from fastapi import HTTPException
 
-tokens = {}
+# Configuration
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
-XERO_REDIRECT_URI = os.environ.get(
-    "XERO_REDIRECT_URI"
-)  # e.g. http://localhost:8080/callback
+XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
 
-# Get Xero endpoints
-DISCOVERY_URL = "https://identity.xero.com/.well-known/openid-configuration"
-disc = requests.get(DISCOVERY_URL, timeout=10).json()
-AUTH_URL = disc["authorization_endpoint"]
-TOKEN_URL = disc["token_endpoint"]
+# Scopes
+XERO_SCOPES = (
+    "offline_access "
+    "accounting.settings.read "
+    "accounting.transactions.read "
+    "accounting.contacts.read "
+    "accounting.attachments.read "
+    "accounting.reports.read "
+    "payroll.employees.read "
+    "payroll.payruns.read "
+    "payroll.payslip.read"
+)
+
+# Discovery
+try:
+    DISCOVERY_URL = "https://identity.xero.com/.well-known/openid-configuration"
+    disc = requests.get(DISCOVERY_URL, timeout=10).json()
+    AUTH_URL = disc["authorization_endpoint"]
+    TOKEN_URL = disc["token_endpoint"]
+except Exception:
+    AUTH_URL = "https://login.xero.com/identity/connect/authorize"
+    TOKEN_URL = "https://identity.xero.com/connect/token"
+
+tokens = {}
 
 
 def get_basic_auth():
-    """Create Basic Auth header for token exchange"""
     credentials = f"{XERO_CLIENT_ID}:{XERO_CLIENT_SECRET}"
     return base64.b64encode(credentials.encode()).decode()
 
 
-def get_access_token():
-    """Get valid access token, refresh if needed"""
-    if not tokens:
+def get_valid_access_token():
+    if not tokens or "access_token" not in tokens:
         raise HTTPException(401, "Not connected to Xero")
 
-    # Check if token is still valid
-    if time.time() < tokens["expires_at"] - 30:
+    if time.time() < tokens.get("expires_at", 0) - 30:
         return tokens["access_token"]
 
-    # Refresh token
-    resp = requests.post(
-        TOKEN_URL,
-        headers={
-            "Authorization": f"Basic {get_basic_auth()}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data={"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]},
-        timeout=10,
-    )
+    try:
+        print("Refreshing Xero Token...")
+        resp = requests.post(
+            TOKEN_URL,
+            headers={
+                "Authorization": f"Basic {get_basic_auth()}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": tokens["refresh_token"],
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        
+        new_tokens = resp.json()
+        tokens["access_token"] = new_tokens["access_token"]
+        if "refresh_token" in new_tokens:
+            tokens["refresh_token"] = new_tokens["refresh_token"]
+        tokens["expires_at"] = int(time.time()) + int(
+            new_tokens.get("expires_in", 1800)
+        )
+        
+        return tokens["access_token"]
+    except Exception as e:
+        print(f"Token refresh error: {e}")
+        raise HTTPException(401, "Failed to refresh Xero token")
 
-    if resp.status_code != 200:
-        raise HTTPException(401, f"Token refresh failed: {resp.text}")
 
-    # Save new tokens
-    new_tokens = resp.json()
-    tokens["access_token"] = new_tokens["access_token"]
-    tokens["refresh_token"] = new_tokens.get("refresh_token", tokens["refresh_token"])
-    tokens["expires_at"] = int(time.time()) + int(new_tokens.get("expires_in", 1800))
+def get_date_filter_iso():
+    one_year_ago = datetime.now() - timedelta(days=365)
+    return one_year_ago.strftime("%Y-%m-%dT00:00:00")
 
-    return tokens["access_token"]
+
+def get_date_filter_simple():
+    one_year_ago = datetime.now() - timedelta(days=365)
+    return one_year_ago.strftime("%Y-%m-%d")
+
+
+def safe_json_response(response, endpoint_name):
+    """
+    Helper to safely parse JSON and print raw text if it fails.
+    """
+    try:
+        return response.json()
+    except Exception:
+        print(f"!!! JSON DECODE ERROR for {endpoint_name} !!!")
+        print(f"Status Code: {response.status_code}")
+        print(f"Raw Content: {response.text[:200]}") 
+        return None
 
 
 def fetch_xero_data_paginated(
-    endpoint: str, data_key: str, tenant_id: str, params: dict = None
-):
-    """
-    Helper function to fetch paginated data from Xero API
-
-    endpoint: API endpoint path (e.g., "Accounts", "BankTransactions")
-    data_key: JSON key containing the data array (e.g., "Accounts", "BankTransactions")
-    tenant_id: Xero tenant ID
-    params: Optional query parameters
-    """
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
-
-    token = get_access_token()
-    all_data = []
-    page = 1
-    params = params or {}
-
-    while True:
-        params["page"] = page
-
-        response = requests.get(
-            f"https://api.xero.com/api.xro/2.0/{endpoint}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "xero-tenant-id": tenant_id,
-                "Accept": "application/json",
-            },
-            params=params,
-            timeout=20,
-        )
-
-        if response.status_code != 200:
-            raise HTTPException(response.status_code, response.text)
-
-        data = response.json()
-        records = data.get(data_key, [])
-
-        if not records:
-            break
-
-        all_data.extend(records)
-
-        # Xero returns 100 records per page by default
-        if len(records) < 100:
-            break
-
-        page += 1
-
-    return all_data
-
-
-def fetch_payroll_data_paginated(
     endpoint: str,
     data_key: str,
     tenant_id: str,
-    params: dict = None,
-    api_version: str = "1.0",
+    access_token: str,
+    params: dict = None
 ):
-    """
-    Helper function to fetch paginated data from Xero Payroll API (AU)
+    if not params:
+        params = {}
 
-    endpoint: Payroll API endpoint path (e.g., "Employees", "PayRuns", "Payslips")
-    data_key: JSON key containing the data array (e.g., "Employees", "PayRuns", "Payslips")
-    tenant_id: Xero tenant ID
-    params: Optional query parameters
-    api_version: API version to use (1.0 or 2.0) - defaults to 1.0
-    """
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
-
-    token = get_access_token()
     all_data = []
     page = 1
-    params = params or {}
+    base_url = "https://api.xero.com/api.xro/2.0"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "xero-tenant-id": tenant_id,
+        "Accept": "application/json",
+    }
 
     while True:
         params["page"] = page
+        try:
+            response = requests.get(
+                f"{base_url}/{endpoint}",
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+            
+            if response.status_code != 200:
+                print(
+                    f"Error fetching {endpoint} page {page}: "
+                    f"{response.status_code}"
+                )
+                break
 
-        response = requests.get(
-            f"https://api.xero.com/payroll.xro/{api_version}/{endpoint}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "xero-tenant-id": tenant_id,
-                "Accept": "application/json",
-            },
-            params=params,
-            timeout=20,
-        )
+            data = safe_json_response(response, endpoint)
+            if not data:
+                print("NO DATA ASSOCIATED WITH THE FOLLOWING ENDPOINT")
+                print(endpoint)
+                break
+            
+            if page == 1:
+                print("THIS IS DATA FOR THE FOLLOWING ENDPOINT")
+                print(endpoint)
+                records = data.get(data_key, [])
+                if records:
+                    print(records[0])
+                else:
+                    print("No records found")
+            
+            records = data.get(data_key, [])
+            if not records:
+                break
 
-        if response.status_code != 200:
-            # Return detailed error message
-            error_detail = f"{response.status_code}: {response.text if response.text else 'No error details'}"
-            raise HTTPException(response.status_code, error_detail)
-
-        data = response.json()
-        records = data.get(data_key, [])
-
-        if not records:
+            all_data.extend(records)
+            if len(records) < 100:
+                break
+            page += 1
+            
+        except Exception as e:
+            print(f"Exception fetching {endpoint}: {e}")
             break
-
-        all_data.extend(records)
-
-        # Xero returns 100 records per page by default
-        if len(records) < 100:
-            break
-
-        page += 1
 
     return all_data
 
 
-def fetch_all_data(tenant_id: str):
-    """
-    Fetch all available data from Xero in one call
-    Useful for initial sync or comprehensive data pull
-    """
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
+def fetch_payroll_data(
+    endpoint: str,
+    data_key: str,
+    tenant_id: str,
+    access_token: str,
+    api_version: str = "1.0"
+):
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "xero-tenant-id": tenant_id,
+        "Accept": "application/json",
+    }
+    
+    url = f"https://api.xero.com/payroll.xro/{api_version}/{endpoint}"
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = safe_json_response(response, f"Payroll-{endpoint}")
+            records = data.get(data_key, []) if data else []
+            
+            if records:
+                print(f"THIS IS DATA FOR PAYROLL ENDPOINT: {endpoint}")
+                print(records[0])
+            else:
+                print(f"No records found for Payroll {endpoint}")
+            
+            return records
+        
+        elif response.status_code == 404 and api_version == "1.0":
+            print(
+                f"AU Payroll (v1.0) 404. Trying Global (v2.0) for "
+                f"{endpoint}..."
+            )
+            url_v2 = f"https://api.xero.com/payroll.xro/2.0/{endpoint}"
+            response = requests.get(url_v2, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = safe_json_response(response, f"Payroll-{endpoint}")
+                records = data.get(data_key, []) if data else []
+                
+                if records:
+                    print(
+                        f"THIS IS DATA FOR PAYROLL ENDPOINT (v2.0): "
+                        f"{endpoint}"
+                    )
+                    print(records[0])
+                else:
+                    print(f"No records found for Payroll {endpoint} (v2.0)")
+                
+                return records
+        
+        if response.status_code in [404, 501, 503]:
+             print(
+                 f"Payroll endpoint {endpoint} returned "
+                 f"{response.status_code}. Skipping."
+             )
+             return []
+        else:
+            if "not been provisioned" in response.text:
+                print(f"Payroll not provisioned for {endpoint}. Skipping.")
+                return []
+            print(f"Payroll API Error {endpoint}: {response.status_code}")
+            return []
+            
+    except Exception as e:
+        print(f"Payroll API Exception {endpoint}: {e}")
+        return []
+
+
+def fetch_all_data(tenant_id: str, access_token: str = None):
+    if not access_token:
+        access_token = get_valid_access_token()
 
     data = {}
     errors = {}
+    
+    date_str = get_date_filter_iso().split("T")[0].replace("-", ",")
+    where_filter = f"Date>=DateTime({date_str})"
+    
+    base_headers = {
+        "Authorization": f"Bearer {access_token}", 
+        "xero-tenant-id": tenant_id,
+        "Accept": "application/json"
+    }
 
-    # Settings
-    try:
-        data["accounts"] = get_accounts(tenant_id)
-    except Exception as e:
-        errors["accounts"] = str(e)
+    def run_paginated(key, endpoint, d_key, params=None): 
+        try:
+            print(f"Fetching {endpoint}...")
+            data[key] = fetch_xero_data_paginated(
+                endpoint, d_key, tenant_id, access_token, params=params
+            )
+        except Exception as e:
+            errors[key] = str(e)
+            print(f"Error fetching {key}: {e}")
 
-    try:
-        data["tax_rates"] = get_tax_rates(tenant_id)
-    except Exception as e:
-        errors["tax_rates"] = str(e)
+    # --- SETTINGS ---
+    run_paginated("accounts", "Accounts", "Accounts")
+    run_paginated("tax_rates", "TaxRates", "TaxRates")
+    run_paginated(
+        "tracking_categories", "TrackingCategories", "TrackingCategories"
+    )
 
-    try:
-        data["tracking_categories"] = get_tracking_categories(tenant_id)
-    except Exception as e:
-        errors["tracking_categories"] = str(e)
+    # --- TRANSACTIONS ---
+    run_paginated(
+        "bank_transactions",
+        "BankTransactions",
+        "BankTransactions",
+        params={"where": where_filter}
+    )
+    run_paginated(
+        "invoices", "Invoices", "Invoices", params={"where": where_filter}
+    )
+    run_paginated(
+        "payments", "Payments", "Payments", params={"where": where_filter}
+    )
+    run_paginated(
+        "credit_notes",
+        "CreditNotes",
+        "CreditNotes",
+        params={"where": where_filter}
+    )
+    run_paginated(
+        "bank_transfers",
+        "BankTransfers",
+        "BankTransfers",
+        params={"where": where_filter}
+    )
+        
+    # --- COUNTS ---
+    for endpoint in ["ManualJournals", "Overpayments", "Prepayments"]:
+        try:
+            print(f"Fetching count for {endpoint}...")
+            res = requests.get(
+                f"https://api.xero.com/api.xro/2.0/{endpoint}",
+                headers=base_headers,
+                params={"page": 1}
+            )
+            
+            key_lower = endpoint.lower()
+            
+            if res.status_code == 200:
+                json_data = safe_json_response(res, endpoint)
+                if json_data:
+                    items = json_data.get(endpoint, [])
+                    data[f"{key_lower}_count"] = len(items)
+                    data[key_lower] = items
+                    
+                    if items:
+                        print(f"THIS IS DATA FOR ENDPOINT: {endpoint}")
+                        print(items[0])
+                    else:
+                        print(f"No records found for {endpoint}")
+                else:
+                    data[f"{key_lower}_count"] = 0
+                    data[key_lower] = []
+            else:
+                print(f"Count fetch {endpoint} status: {res.status_code}")
+                data[f"{key_lower}_count"] = 0
+                data[key_lower] = []
+                
+        except Exception as e:
+            errors[endpoint] = str(e)
 
-    # Transactions
+    # --- REPORTS ---
     try:
-        data["bank_transactions"] = get_bank_transactions(tenant_id)
-    except Exception as e:
-        errors["bank_transactions"] = str(e)
-
-    try:
-        data["payments"] = get_payments(tenant_id)
-    except Exception as e:
-        errors["payments"] = str(e)
-
-    try:
-        data["credit_notes"] = get_credit_notes(tenant_id)
-    except Exception as e:
-        errors["credit_notes"] = str(e)
-
-    try:
-        data["overpayments"] = get_overpayments(tenant_id)
-    except Exception as e:
-        errors["overpayments"] = str(e)
-
-    try:
-        data["prepayments"] = get_prepayments(tenant_id)
-    except Exception as e:
-        errors["prepayments"] = str(e)
-
-    try:
-        data["manual_journals"] = get_manual_journals(tenant_id)
-    except Exception as e:
-        errors["manual_journals"] = str(e)
-
-    try:
-        data["invoices"] = get_invoices(tenant_id)
-    except Exception as e:
-        errors["invoices"] = str(e)
-
-    try:
-        data["bank_transfers"] = get_bank_transfers(tenant_id)
-    except Exception as e:
-        errors["bank_transfers"] = str(e)
-
-    # Payroll
-    try:
-        data["employees"] = get_employees(tenant_id)
-    except Exception as e:
-        errors["employees"] = str(e)
-
-    try:
-        data["payruns"] = get_payruns(tenant_id)
-    except Exception as e:
-        errors["payruns"] = str(e)
-
-    try:
-        payruns = data.get("payruns", [])
-        if payruns and len(payruns) > 0:
-            first_payrun_id = payruns[0].get("PayRunID")
-            data["payslips"] = get_payslips(tenant_id, payrun_id=first_payrun_id)
+        print("Fetching Profit & Loss...")
+        pl_url = "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss"
+        res = requests.get(
+            pl_url,
+            headers=base_headers,
+            params={
+                "fromDate": get_date_filter_simple(),
+                "toDate": datetime.now().strftime("%Y-%m-%d")
+            }
+        )
+        if res.status_code == 200:
+            pl_data = safe_json_response(res, "ProfitAndLoss") or {}
+            data["profit_loss"] = pl_data
+            
+            if pl_data:
+                print("THIS IS DATA FOR PROFIT & LOSS:")
+                print({
+                    k: "..." if isinstance(v, (list, dict)) else v 
+                    for k, v in list(pl_data.items())[:5]
+                })
         else:
-            data["payslips"] = []
-    except Exception as e:
-        errors["payslips"] = str(e)
-
-    # Reports
-    try:
-        data["profit_loss"] = get_profit_loss(tenant_id)
+            print(f"P&L Error: {res.status_code}")
+            data["profit_loss"] = {}
     except Exception as e:
         errors["profit_loss"] = str(e)
 
     try:
-        data["balance_sheet"] = get_balance_sheet(tenant_id)
+        print("Fetching Balance Sheet...")
+        bs_url = "https://api.xero.com/api.xro/2.0/Reports/BalanceSheet"
+        res = requests.get(
+            bs_url,
+            headers=base_headers,
+            params={"date": datetime.now().strftime("%Y-%m-%d")}
+        )
+        if res.status_code == 200:
+            bs_data = safe_json_response(res, "BalanceSheet") or {}
+            data["balance_sheet"] = bs_data
+            
+            if bs_data:
+                print("THIS IS DATA FOR BALANCE SHEET:")
+                print({
+                    k: "..." if isinstance(v, (list, dict)) else v 
+                    for k, v in list(bs_data.items())[:5]
+                })
+        else:
+            print(f"Balance Sheet Error: {res.status_code}")
+            data["balance_sheet"] = {}
     except Exception as e:
         errors["balance_sheet"] = str(e)
 
-    result = {"data": data}
-    if errors:
-        result["errors"] = errors
+    # --- PAYROLL ---
+    print("Fetching Payroll...")
+    try:
+        data["employees"] = fetch_payroll_data(
+            "Employees", "Employees", tenant_id, access_token
+        )
+    except Exception as e:
+        errors["employees"] = str(e)
 
-    return result
+    try:
+        data["payruns"] = fetch_payroll_data(
+            "PayRuns", "PayRuns", tenant_id, access_token
+        )
+    except Exception as e:
+        errors["payruns"] = str(e)
 
+    # Payslips
+    try:
+        if data.get("payruns"):
+            latest_id = data["payruns"][0].get("PayRunID")
+            print(f"Fetching Payslips for PayRun {latest_id}...")
+            
+            res = requests.get(
+                f"https://api.xero.com/payroll.xro/1.0/PayRuns/{latest_id}",
+                headers=base_headers
+            )
+            
+            if res.status_code == 200:
+                json_data = safe_json_response(res, "Payslips")
+                if json_data:
+                    payruns_wrappers = json_data.get("PayRuns", [])
+                    payslips = (
+                        payruns_wrappers[0].get("Payslips", []) 
+                        if payruns_wrappers else []
+                    )
+                    data["payslips"] = payslips
+                    
+                    if payslips:
+                        print("THIS IS DATA FOR PAYSLIPS:")
+                        print(payslips[0])
+                    else:
+                        print("No payslips found")
+                else:
+                    data["payslips"] = []
+            else:
+                 print(f"Payslips fetch failed: {res.status_code}")
+                 data["payslips"] = []
+        else:
+            data["payslips"] = []
+    except Exception as e:
+        print(f"Payslips Error: {e}")
+        errors["payslips"] = str(e)
 
-# ============================================================================
-# ACCOUNTING SETTINGS ENDPOINTS (accounting.settings.read)
-# ============================================================================
-
-
-def get_accounts(tenant_id: str):
-    """Fetch chart of accounts (with pagination support)"""
-    return fetch_xero_data_paginated("Accounts", "Accounts", tenant_id)
-
-
-def get_tax_rates(tenant_id: str):
-    """Fetch tax rates (GST logic)"""
-    return fetch_xero_data_paginated("TaxRates", "TaxRates", tenant_id)
-
-
-def get_tracking_categories(tenant_id: str):
-    """Fetch tracking categories (cost centres, jobs, departments)"""
-    return fetch_xero_data_paginated(
-        "TrackingCategories", "TrackingCategories", tenant_id
-    )
-
-
-def get_organisation(tenant_id: str):
-    """Fetch organisation details (name, currency, country, tax settings)"""
-    orgs = fetch_xero_data_paginated("Organisation", "Organisations", tenant_id)
-    return orgs[0] if orgs else {}
-
-
-# ============================================================================
-# ACCOUNTING TRANSACTIONS ENDPOINTS (accounting.transactions.read)
-# ============================================================================
-
-
-def get_bank_transactions(tenant_id: str):
-    """Fetch bank transactions (with pagination support)"""
-    return fetch_xero_data_paginated("BankTransactions", "BankTransactions", tenant_id)
-
-
-def get_payments(tenant_id: str):
-    """Fetch payments (links to invoices/credit notes)"""
-    return fetch_xero_data_paginated("Payments", "Payments", tenant_id)
-
-
-def get_credit_notes(tenant_id: str):
-    """Fetch credit notes (refunds, returns)"""
-    return fetch_xero_data_paginated("CreditNotes", "CreditNotes", tenant_id)
-
-
-def get_overpayments(tenant_id: str):
-    """Fetch overpayments (excess payments requiring allocation)"""
-    return fetch_xero_data_paginated("Overpayments", "Overpayments", tenant_id)
-
-
-def get_prepayments(tenant_id: str):
-    """Fetch prepayments (advance payments)"""
-    return fetch_xero_data_paginated("Prepayments", "Prepayments", tenant_id)
-
-
-def get_manual_journals(tenant_id: str):
-    """Fetch manual journals (adjustments not in bank transactions)"""
-    return fetch_xero_data_paginated("ManualJournals", "ManualJournals", tenant_id)
-
-
-def get_invoices(tenant_id: str):
-    """Fetch invoices (for income verification)"""
-    return fetch_xero_data_paginated("Invoices", "Invoices", tenant_id)
-
-
-def get_bank_transfers(tenant_id: str):
-    """Fetch bank transfers (fund movements between accounts)"""
-    return fetch_xero_data_paginated("BankTransfers", "BankTransfers", tenant_id)
+    return {"data": data, "errors": errors}
 
 
 def generate_xero_preview(all_data: dict) -> dict:
-    """Generate a structured preview of Xero data"""
+    fetched = all_data.get("data", {})
+    
+    def get_list(key, limit=100):
+        items = fetched.get(key, [])
+        return items[:limit], len(items)
+
+    def get_count(key):
+        return fetched.get(f"{key}_count", 0)
+
+    acc_list, acc_total = get_list("accounts")
+    tr_list, tr_total = get_list("tax_rates")
+    tc_list, tc_total = get_list("tracking_categories")
+    bt_list, bt_total = get_list("bank_transactions")
+    inv_list, inv_total = get_list("invoices")
+    pay_list, pay_total = get_list("payments")
+    cn_list, cn_total = get_list("credit_notes")
+    btr_list, btr_total = get_list("bank_transfers")
+    emp_list, emp_total = get_list("employees")
+    pr_list, pr_total = get_list("payruns")
+    ps_list, ps_total = get_list("payslips")
+
     preview = {
+        "organization": "Xero Organization", 
         "settings": {
-            "accounts": (all_data["data"].get("accounts") or [None])[0],
-            "accounts_total": len(all_data["data"].get("accounts", [])),
-            "accounts_list": all_data["data"].get("accounts", []),
-            "tax_rates": (all_data["data"].get("tax_rates") or [None])[0],
-            "tax_rates_total": len(all_data["data"].get("tax_rates", [])),
-            "tax_rates_list": all_data["data"].get("tax_rates", []),
-            "tracking_categories": (
-                all_data["data"].get("tracking_categories") or [None]
-            )[0],
-            "tracking_categories_total": len(
-                all_data["data"].get("tracking_categories", [])
-            ),
-            "tracking_categories_list": all_data["data"].get("tracking_categories", []),
+            "accounts_list": acc_list,
+            "accounts_total": acc_total,
+            "tax_rates_list": tr_list,
+            "tax_rates_total": tr_total,
+            "tracking_categories_list": tc_list,
+            "tracking_categories_total": tc_total,
         },
         "transactions": {
-            "bank_transactions": (all_data["data"].get("bank_transactions") or [None])[
-                0
-            ],
-            "bank_transactions_total": len(
-                all_data["data"].get("bank_transactions", [])
-            ),
-            "bank_transactions_list": all_data["data"].get("bank_transactions", []),
-            "payments": (all_data["data"].get("payments") or [None])[0],
-            "payments_total": len(all_data["data"].get("payments", [])),
-            "payments_list": all_data["data"].get("payments", []),
-            "credit_notes": (all_data["data"].get("credit_notes") or [None])[0],
-            "credit_notes_total": len(all_data["data"].get("credit_notes", [])),
-            "credit_notes_list": all_data["data"].get("credit_notes", []),
-            "manual_journals": (all_data["data"].get("manual_journals") or [None])[0],
-            "manual_journals_total": len(all_data["data"].get("manual_journals", [])),
-            "manual_journals_list": all_data["data"].get("manual_journals", []),
-            "overpayments": (all_data["data"].get("overpayments") or [None])[0],
-            "overpayments_total": len(all_data["data"].get("overpayments", [])),
-            "overpayments_list": all_data["data"].get("overpayments", []),
-            "prepayments": (all_data["data"].get("prepayments") or [None])[0],
-            "prepayments_total": len(all_data["data"].get("prepayments", [])),
-            "prepayments_list": all_data["data"].get("prepayments", []),
-            "invoices": (all_data["data"].get("invoices") or [None])[0],
-            "invoices_total": len(all_data["data"].get("invoices", [])),
-            "invoices_list": all_data["data"].get("invoices", []),
-            "bank_transfers": (all_data["data"].get("bank_transfers") or [None])[0],
-            "bank_transfers_total": len(all_data["data"].get("bank_transfers", [])),
-            "bank_transfers_list": all_data["data"].get("bank_transfers", []),
+            "bank_transactions_list": bt_list,
+            "bank_transactions_total": bt_total,
+            "invoices_list": inv_list,
+            "invoices_total": inv_total,
+            "payments_list": pay_list,
+            "payments_total": pay_total,
+            "credit_notes_list": cn_list,
+            "credit_notes_total": cn_total,
+            "bank_transfers_list": btr_list,
+            "bank_transfers_total": btr_total,
+            "manual_journals_total": get_count("manualjournals"),
+            "overpayments_total": get_count("overpayments"),
+            "prepayments_total": get_count("prepayments"),
         },
         "payroll": {
-            "employees": (all_data["data"].get("employees") or [None])[0],
-            "employees_total": len(all_data["data"].get("employees", [])),
-            "employees_list": all_data["data"].get("employees", []),
-            "payruns": (all_data["data"].get("payruns") or [None])[0],
-            "payruns_total": len(all_data["data"].get("payruns", [])),
-            "payruns_list": all_data["data"].get("payruns", []),
-            "payslips": (all_data["data"].get("payslips") or [None])[0],
-            "payslips_total": len(all_data["data"].get("payslips", [])),
-            "payslips_list": all_data["data"].get("payslips", []),
+            "employees_list": emp_list,
+            "employees_total": emp_total,
+            "payruns_list": pr_list,
+            "payruns_total": pr_total,
+            "payslips_list": ps_list,
+            "payslips_total": ps_total,
         },
         "reports": {
-            "profit_loss": all_data["data"].get("profit_loss"),
-            "balance_sheet": all_data["data"].get("balance_sheet"),
+            "profit_loss": fetched.get("profit_loss", {}),
+            "balance_sheet": fetched.get("balance_sheet", {}),
         },
     }
     return preview
 
 
-def generate_all_reports_xero(result: dict, hashed_email: str) -> list:
-    """Generate all PDF reports for Xero data and upload to S3"""
+def generate_all_reports_xero(
+    result: dict, hashed_email: str, org_name: str = "MyCompany"
+) -> list:
     s3_keys = []
-    s3_keys.append(
-        generate_accounts_report(result, "xero_accounts_report.pdf", hashed_email)
-    )
-    s3_keys.append(
-        generate_transactions_report(
-            result, "xero_transactions_report.pdf", hashed_email
-        )
-    )
-    s3_keys.append(
-        generate_payments_report(result, "xero_payments_report.pdf", hashed_email)
-    )
-    s3_keys.append(
-        generate_credit_notes_report(
-            result, "xero_credit_notes_report.pdf", hashed_email
-        )
-    )
-    s3_keys.append(
-        generate_payroll_report(result, "xero_payroll_report.pdf", hashed_email)
-    )
-    s3_keys.append(
-        generate_invoices_report(result, "xero_invoices_report.pdf", hashed_email)
-    )
-    s3_keys.append(
-        generate_bank_transfers_report(
-            result, "xero_bank_transfers_report.pdf", hashed_email
-        )
-    )
-    s3_keys.append(
-        generate_reports_summary(result, "xero_financial_reports.pdf", hashed_email)
-    )
-    return s3_keys
+    
+    safe_org_name = "".join(
+        c for c in org_name if c.isalnum() or c in (' ', '_')
+    ).replace(" ", "_")
+    
+    generators = [
+        (
+            generate_accounts_report,
+            f"{safe_org_name}_xero_accounts_report.pdf"
+        ),
+        (
+            generate_transactions_report,
+            f"{safe_org_name}_xero_transactions_report.pdf"
+        ),
+        (
+            generate_payments_report,
+            f"{safe_org_name}_xero_payments_report.pdf"
+        ),
+        (
+            generate_credit_notes_report,
+            f"{safe_org_name}_xero_credit_notes_report.pdf"
+        ),
+        (
+            generate_payroll_report,
+            f"{safe_org_name}_xero_payroll_report.pdf"
+        ),
+        (
+            generate_invoices_report,
+            f"{safe_org_name}_xero_invoices_report.pdf"
+        ),
+        (
+            generate_bank_transfers_report,
+            f"{safe_org_name}_xero_bank_transfers_report.pdf"
+        ),
+        (
+            generate_reports_summary,
+            f"{safe_org_name}_xero_financial_reports.pdf"
+        ),
+    ]
 
-
-# ============================================================================
-# CONTACTS ENDPOINT (accounting.contacts.read)
-# ============================================================================
-
-
-def get_contacts(tenant_id: str):
-    """Fetch contacts (customers, suppliers with ABN/tax details) - with pagination"""
-    return fetch_xero_data_paginated("Contacts", "Contacts", tenant_id)
-
-
-# ============================================================================
-# PAYROLL ENDPOINTS (Australian Payroll API v1.0)
-# ============================================================================
-
-
-def get_employees(tenant_id: str):
-    """
-    Fetch employees (for income verification)
-    Returns: EmployeeID, names, DOB, addresses, employment status, bank accounts
-
-    Uses Payroll API v1.0 (compatible with most Xero accounts)
-    """
-    return fetch_payroll_data_paginated(
-        "Employees", "Employees", tenant_id, api_version="1.0"
-    )
-
-
-def get_payruns(tenant_id: str):
-    """
-    Fetch pay runs (pay periods & totals)
-    Returns: PayRunID, period start/end, calendar, totals, status
-
-    Uses Payroll API v1.0 (compatible with most Xero accounts)
-    """
-    return fetch_payroll_data_paginated(
-        "PayRuns", "PayRuns", tenant_id, api_version="1.0"
-    )
-
-
-def get_payslips(tenant_id: str, payrun_id: str = None):
-    """
-    Fetch payslips (income details per employee per pay run)
-
-    Query params:
-    - tenant_id: Required - Xero tenant ID
-    - payrun_id: Required for v1.0 - specific pay run ID
-
-    Returns: Gross, net, tax withheld, super, YTD figures, earnings lines
-
-    Uses Payroll API v1.0
-    Note: v1.0 requires PayRunID to fetch payslips
-    """
-    if not payrun_id:
-        # If no payrun_id provided, get all payruns and fetch payslips for the most recent one
+    for func, filename in generators:
         try:
-            payruns = get_payruns(tenant_id)
-            if payruns and len(payruns) > 0:
-                # Get the most recent payrun
-                payrun_id = payruns[0].get("PayRunID")
+            key = func(result, filename, hashed_email)
+            if key:
+                s3_keys.append(key)
         except Exception as e:
-            print(f"Error fetching payruns to get payslips: {e}")
-            pass
+            print(f"Error generating {filename}: {e}")
 
-    if not payrun_id:
-        raise HTTPException(
-            400,
-            "payrun_id is required for v1.0 API. Get PayRunID from /payroll/payruns first",
-        )
-
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
-
-    token = get_access_token()
-
-    # v1.0 uses a different endpoint structure: GET /PayRuns/{PayRunID}
-    # This returns the PayRun with Payslips embedded
-    response = requests.get(
-        f"https://api.xero.com/payroll.xro/1.0/PayRuns/{payrun_id}",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "xero-tenant-id": tenant_id,
-            "Accept": "application/json",
-        },
-        timeout=20,
-    )
-
-    if response.status_code != 200:
-        error_detail = f"{response.status_code}: {response.text if response.text else 'No error details'}"
-        raise HTTPException(response.status_code, error_detail)
-
-    data = response.json()
-
-    # Extract payslips from the PayRuns array
-    payruns_data = data.get("PayRuns", [])
-    if payruns_data and len(payruns_data) > 0:
-        return payruns_data[0].get("Payslips", [])
-
-    return []
-
-
-# ============================================================================
-# REPORTS ENDPOINTS (accounting.reports.read) - requires additional scope
-# ============================================================================
-
-
-def get_profit_loss(tenant_id: str, from_date: str = None, to_date: str = None):
-    """
-    Fetch Profit & Loss statement
-
-    Query params:
-    - tenant_id: Required - Xero tenant ID
-    - from_date: Start date (YYYY-MM-DD)
-    - to_date: End date (YYYY-MM-DD)
-    """
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
-
-    token = get_access_token()
-    params = {}
-    if from_date:
-        params["fromDate"] = from_date
-    if to_date:
-        params["toDate"] = to_date
-
-    response = requests.get(
-        "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "xero-tenant-id": tenant_id,
-            "Accept": "application/json",
-        },
-        params=params,
-        timeout=20,
-    )
-
-    if response.status_code != 200:
-        raise HTTPException(response.status_code, response.text)
-
-    return response.json()
-
-
-def get_balance_sheet(tenant_id: str, date: str = None):
-    """
-    Fetch Balance Sheet
-
-    Query params:
-    - tenant_id: Required - Xero tenant ID
-    - date: Report date (YYYY-MM-DD)
-    """
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
-
-    token = get_access_token()
-    params = {}
-    if date:
-        params["date"] = date
-
-    response = requests.get(
-        "https://api.xero.com/api.xro/2.0/Reports/BalanceSheet",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "xero-tenant-id": tenant_id,
-            "Accept": "application/json",
-        },
-        params=params,
-        timeout=20,
-    )
-
-    if response.status_code != 200:
-        raise HTTPException(response.status_code, response.text)
-
-    return response.json()
-
-
-# ============================================================================
-# ATTACHMENTS ENDPOINTS (accounting.attachments.read)
-# ============================================================================
-
-
-def get_attachments(tenant_id: str, endpoint: str, guid: str):
-    """
-    Fetch attachments for a specific entity
-
-    tenant_id: Xero tenant ID
-    endpoint: BankTransactions, Invoices, PurchaseOrders, etc.
-    guid: The GUID of the specific record
-
-    Example: /attachments/BankTransactions/abc-123-def
-    """
-    if not tenant_id:
-        raise HTTPException(400, "Not connected. tenant_id is required")
-
-    token = get_access_token()
-
-    response = requests.get(
-        f"https://api.xero.com/api.xro/2.0/{endpoint}/{guid}/Attachments",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "xero-tenant-id": tenant_id,
-            "Accept": "application/json",
-        },
-        timeout=20,
-    )
-
-    if response.status_code != 200:
-        raise HTTPException(response.status_code, response.text)
-
-    return response.json().get("Attachments", [])
+    return s3_keys
