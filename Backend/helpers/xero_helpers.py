@@ -60,7 +60,6 @@ def get_valid_access_token():
         return tokens["access_token"]
 
     try:
-        print("Refreshing Xero Token...")
         resp = requests.post(
             TOKEN_URL,
             headers={
@@ -85,7 +84,6 @@ def get_valid_access_token():
         
         return tokens["access_token"]
     except Exception as e:
-        print(f"Token refresh error: {e}")
         raise HTTPException(401, "Failed to refresh Xero token")
 
 
@@ -106,9 +104,6 @@ def safe_json_response(response, endpoint_name):
     try:
         return response.json()
     except Exception:
-        print(f"!!! JSON DECODE ERROR for {endpoint_name} !!!")
-        print(f"Status Code: {response.status_code}")
-        print(f"Raw Content: {response.text[:200]}") 
         return None
 
 
@@ -143,26 +138,14 @@ def fetch_xero_data_paginated(
             )
             
             if response.status_code != 200:
-                print(
-                    f"Error fetching {endpoint} page {page}: "
-                    f"{response.status_code}"
-                )
                 break
 
             data = safe_json_response(response, endpoint)
             if not data:
-                print("NO DATA ASSOCIATED WITH THE FOLLOWING ENDPOINT")
-                print(endpoint)
                 break
             
             if page == 1:
-                print("THIS IS DATA FOR THE FOLLOWING ENDPOINT")
-                print(endpoint)
                 records = data.get(data_key, [])
-                if records:
-                    print(records[0])
-                else:
-                    print("No records found")
             
             records = data.get(data_key, [])
             if not records:
@@ -174,7 +157,6 @@ def fetch_xero_data_paginated(
             page += 1
             
         except Exception as e:
-            print(f"Exception fetching {endpoint}: {e}")
             break
 
     return all_data
@@ -201,20 +183,9 @@ def fetch_payroll_data(
         if response.status_code == 200:
             data = safe_json_response(response, f"Payroll-{endpoint}")
             records = data.get(data_key, []) if data else []
-            
-            if records:
-                print(f"THIS IS DATA FOR PAYROLL ENDPOINT: {endpoint}")
-                print(records[0])
-            else:
-                print(f"No records found for Payroll {endpoint}")
-            
             return records
         
         elif response.status_code == 404 and api_version == "1.0":
-            print(
-                f"AU Payroll (v1.0) 404. Trying Global (v2.0) for "
-                f"{endpoint}..."
-            )
             url_v2 = f"https://api.xero.com/payroll.xro/2.0/{endpoint}"
             response = requests.get(url_v2, headers=headers, timeout=30)
             
@@ -222,32 +193,16 @@ def fetch_payroll_data(
                 data = safe_json_response(response, f"Payroll-{endpoint}")
                 records = data.get(data_key, []) if data else []
                 
-                if records:
-                    print(
-                        f"THIS IS DATA FOR PAYROLL ENDPOINT (v2.0): "
-                        f"{endpoint}"
-                    )
-                    print(records[0])
-                else:
-                    print(f"No records found for Payroll {endpoint} (v2.0)")
-                
                 return records
         
         if response.status_code in [404, 501, 503]:
-             print(
-                 f"Payroll endpoint {endpoint} returned "
-                 f"{response.status_code}. Skipping."
-             )
              return []
         else:
             if "not been provisioned" in response.text:
-                print(f"Payroll not provisioned for {endpoint}. Skipping.")
                 return []
-            print(f"Payroll API Error {endpoint}: {response.status_code}")
             return []
             
     except Exception as e:
-        print(f"Payroll API Exception {endpoint}: {e}")
         return []
 
 
@@ -269,13 +224,11 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
 
     def run_paginated(key, endpoint, d_key, params=None): 
         try:
-            print(f"Fetching {endpoint}...")
             data[key] = fetch_xero_data_paginated(
                 endpoint, d_key, tenant_id, access_token, params=params
             )
         except Exception as e:
             errors[key] = str(e)
-            print(f"Error fetching {key}: {e}")
 
     # --- SETTINGS ---
     run_paginated("accounts", "Accounts", "Accounts")
@@ -313,7 +266,6 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
     # --- COUNTS ---
     for endpoint in ["ManualJournals", "Overpayments", "Prepayments"]:
         try:
-            print(f"Fetching count for {endpoint}...")
             res = requests.get(
                 f"https://api.xero.com/api.xro/2.0/{endpoint}",
                 headers=base_headers,
@@ -329,16 +281,10 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
                     data[f"{key_lower}_count"] = len(items)
                     data[key_lower] = items
                     
-                    if items:
-                        print(f"THIS IS DATA FOR ENDPOINT: {endpoint}")
-                        print(items[0])
-                    else:
-                        print(f"No records found for {endpoint}")
                 else:
                     data[f"{key_lower}_count"] = 0
                     data[key_lower] = []
             else:
-                print(f"Count fetch {endpoint} status: {res.status_code}")
                 data[f"{key_lower}_count"] = 0
                 data[key_lower] = []
                 
@@ -347,7 +293,6 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
 
     # --- REPORTS ---
     try:
-        print("Fetching Profit & Loss...")
         pl_url = "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss"
         res = requests.get(
             pl_url,
@@ -361,20 +306,12 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
             pl_data = safe_json_response(res, "ProfitAndLoss") or {}
             data["profit_loss"] = pl_data
             
-            if pl_data:
-                print("THIS IS DATA FOR PROFIT & LOSS:")
-                print({
-                    k: "..." if isinstance(v, (list, dict)) else v 
-                    for k, v in list(pl_data.items())[:5]
-                })
         else:
-            print(f"P&L Error: {res.status_code}")
             data["profit_loss"] = {}
     except Exception as e:
         errors["profit_loss"] = str(e)
 
     try:
-        print("Fetching Balance Sheet...")
         bs_url = "https://api.xero.com/api.xro/2.0/Reports/BalanceSheet"
         res = requests.get(
             bs_url,
@@ -385,20 +322,12 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
             bs_data = safe_json_response(res, "BalanceSheet") or {}
             data["balance_sheet"] = bs_data
             
-            if bs_data:
-                print("THIS IS DATA FOR BALANCE SHEET:")
-                print({
-                    k: "..." if isinstance(v, (list, dict)) else v 
-                    for k, v in list(bs_data.items())[:5]
-                })
         else:
-            print(f"Balance Sheet Error: {res.status_code}")
             data["balance_sheet"] = {}
     except Exception as e:
         errors["balance_sheet"] = str(e)
 
     # --- PAYROLL ---
-    print("Fetching Payroll...")
     try:
         data["employees"] = fetch_payroll_data(
             "Employees", "Employees", tenant_id, access_token
@@ -417,7 +346,6 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
     try:
         if data.get("payruns"):
             latest_id = data["payruns"][0].get("PayRunID")
-            print(f"Fetching Payslips for PayRun {latest_id}...")
             
             res = requests.get(
                 f"https://api.xero.com/payroll.xro/1.0/PayRuns/{latest_id}",
@@ -434,20 +362,13 @@ def fetch_all_data(tenant_id: str, access_token: str = None):
                     )
                     data["payslips"] = payslips
                     
-                    if payslips:
-                        print("THIS IS DATA FOR PAYSLIPS:")
-                        print(payslips[0])
-                    else:
-                        print("No payslips found")
                 else:
                     data["payslips"] = []
             else:
-                 print(f"Payslips fetch failed: {res.status_code}")
                  data["payslips"] = []
         else:
             data["payslips"] = []
     except Exception as e:
-        print(f"Payslips Error: {e}")
         errors["payslips"] = str(e)
 
     return {"data": data, "errors": errors}
@@ -566,6 +487,6 @@ def generate_all_reports_xero(
             if key:
                 s3_keys.append(key)
         except Exception as e:
-            print(f"Error generating {filename}: {e}")
+            pass
 
     return s3_keys

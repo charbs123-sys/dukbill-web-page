@@ -408,7 +408,6 @@ def update_anonymized_json_xero(
                 "/broker_anonymized/emails_anonymized.json",
                 documents,
             )
-            print(f"Updated existing entry for {org_name}")
             return True
 
     # If organization doesn't exist, append new entry
@@ -417,7 +416,6 @@ def update_anonymized_json_xero(
     save_json_file(
         hashed_email, "/broker_anonymized/emails_anonymized.json", documents
     )
-    print(f"Added new entry for {org_name}")
     return True
 
 
@@ -461,9 +459,7 @@ def get_docs_xero(client_id: str, emails: list, category: str) -> list:
             ).replace(" ", "_") + "_"
 
             report_filename = filename.replace(category, safe_org_name)
-            print(report_filename)
             s3_key = f"{hashed_email}/xero_reports/{report_filename}"
-            print(s3_key)
             # Check if file exists in S3
             try:
                 s3.head_object(Bucket=bucket_name, Key=s3_key)
@@ -952,8 +948,6 @@ def add_comment_docs_xero(
         
             for filename in list(org_reports.keys()):
                 sanitized_filename = filename.replace(org_name, safe_org, 1)
-                print("this is sanitized filename")
-                print(sanitized_filename)
                 if sanitized_filename == category:
                     org_reports[filename] = comment
                     updated = True
@@ -1377,7 +1371,6 @@ def delete_docs_xero(
         # Delete from anonymized json
         documents = get_json_file(hashed_email, anonymized_key)
         updated = False
-        print("starting delete")
         for doc in documents:
             for org_name, org_reports in doc.items():
                 # Skip non-organization keys

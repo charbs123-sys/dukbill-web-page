@@ -775,11 +775,7 @@ async def add_accountant(http_request: Request, accountant_id: str, user=Depends
     user_obj = find_user(auth0_id)
     client = find_client(user_obj["user_id"])
     if not client:
-        # print("entered here")
         raise HTTPException(status_code=404, detail="Client not found")
-    # print("before registering")
-    # print(client["client_id"])
-    # print(accountant_id)
     registered_accountant_id = register_client_accountant(client["client_id"], accountant_id)
     if not registered_accountant_id:
         raise HTTPException(status_code=400, detail="Invalid accountant ID")
@@ -1038,8 +1034,6 @@ async def get_category_documents_broker(
     # retrieving xero/myob documents
     if not category.startswith(("Broker_", "idmerit_", "accountant")):
         # Try to get Xero documents for this organization
-        print("xero document")
-        print(category)
         xero_docs = get_docs_xero(client["client_id"], [client_user["email"]], category)
         documents.extend(xero_docs)
     else:
@@ -1200,9 +1194,6 @@ async def add_document_comment(
     hashed_user_email = request.get("hashed_email")
     thread_id = request.get("threadid", None)
     
-    print("category:", category)
-    print("thread_id:", thread_id)
-    
     if "xero" in category.lower():
         file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("xero_") else thread_id
         add_comment_docs_xero(
@@ -1283,7 +1274,6 @@ async def remove_document_comment(
 
     if "xero" in category.lower():
         file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("xero_") else thread_id
-        print(file_name)
         remove_comment_docs_xero(
             client_id, hashed_user_email, file_name, "xero_reports"
         )
@@ -2107,7 +2097,6 @@ async def callback_xero(
                 hashed_email,
                 access_token  # Pass access token to background task
             )
-            print(f"Scheduled background tasks for {hashed_email}")
         
     except HTTPException:
         raise
@@ -2154,17 +2143,14 @@ def perform_xero_background_tasks(
         # Include any errors from the fetch process
         if all_data.get("errors"):
             result["errors"] = all_data["errors"]
-            print(f"Fetch errors for {hashed_email}: {all_data['errors']}")
 
         # Generate PDFs and upload to S3
         try:
             s3_keys = generate_all_reports_xero(result, hashed_email, org_name)
             result["pdf_reports"] = s3_keys
             result["s3_bucket"] = bucket_name
-            print(f"Generated {len(s3_keys)} PDFs for {hashed_email}")
         except Exception as e:
             result["pdf_error"] = str(e)
-            print(f"Error in PDF generation for {hashed_email}: {e}")
             import traceback
             traceback.print_exc()
 
@@ -2179,16 +2165,12 @@ def perform_xero_background_tasks(
                 REPORT_ORG,
                 org_name,
             )
-            print(f"Anonymized JSON updated successfully for {hashed_email}")
         except Exception as e:
-            print(f"Error updating anonymized JSON for {hashed_email}: {e}")
             import traceback
             traceback.print_exc()
 
-        print(f"Successfully completed Xero background tasks for {hashed_email}")
 
     except Exception as e:
-        print(f"Critical error in Xero background tasks for {hashed_email}: {e}")
         import traceback
         traceback.print_exc()
 
