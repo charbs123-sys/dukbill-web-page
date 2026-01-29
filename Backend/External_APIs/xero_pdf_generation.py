@@ -1,5 +1,7 @@
 # xero_pdf_generators_aesthetic.py
 from io import BytesIO
+import datetime
+import re
 
 from Database.S3_utils import upload_pdf_to_s3
 from reportlab.lib import colors
@@ -64,28 +66,42 @@ def add_table(story, title, rows, columns, col_widths, styles):
 
 
 def safe_date(s):
+    """
+    Handle Xero date formats.
+    Supports:
+    1. Microsoft JSON format: /Date(1763337600000+0000)/
+    2. ISO 8601 strings: 2024-01-15T00:00:00
+    """
     if not s:
         return ""
-    if isinstance(s, str) and "/Date(" in s:
-        ts = s.split("(")[1].split(")")[0]
-        if "+" in ts or "-" in ts:
-            ts = ts.split("+")[0].split("-")[0]
-        try:
-            import datetime
+    
+    s_str = str(s)
 
-            dt = datetime.datetime.utcfromtimestamp(int(ts) / 1000)
-            return dt.strftime("%Y-%m-%d")
-        except Exception as e:
-            print(f"Error parsing date {s}: {e}")
-            return s[:10]
-    return str(s)[:10]
+    # Handle /Date(123123123+0000)/ format found in your logs
+    if "/Date(" in s_str:
+        try:
+            # Extract numbers using regex
+            timestamp_match = re.search(r"Date\((\d+)([+-]\d+)?\)", s_str)
+            if timestamp_match:
+                ts_ms = int(timestamp_match.group(1))
+                # Convert milliseconds to seconds
+                dt = datetime.datetime.utcfromtimestamp(ts_ms / 1000)
+                return dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass # Fallback to default slicing
+
+    # Handle Standard ISO format or fallback
+    return s_str[:10]
 
 
 def money(x):
+    """Safely format money. Returns 0.00 if None or invalid. No logging."""
+    if x is None:
+        return "0.00"
     try:
         return f"{float(x):,.2f}"
-    except Exception as e:
-        print(f"Error formatting money value {x}: {e}")
+    except Exception:
+        # Silently fail -> This stops the log spam
         return "0.00"
 
 
@@ -94,16 +110,8 @@ def short(s, n=50):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def mask(val, show_last=4):
-    val = str(val or "")
-    return (
-        ("*" * max(0, len(val) - show_last)) + val[-show_last:]
-        if len(val) > show_last
-        else val
-    )
-
-
 def _get(d, path, default=None):
+    """Navigate nested dict using slash-separated path."""
     cur = d
     for k in path.split("/"):
         if not isinstance(cur, dict) or k not in cur:
@@ -123,14 +131,6 @@ def _new_doc(buffer):
     )
 
 
-def _as_list(maybe_list_or_item):
-    if maybe_list_or_item is None:
-        return []
-    if isinstance(maybe_list_or_item, list):
-        return maybe_list_or_item
-    return [maybe_list_or_item]
-
-
 # ---------- 1) ACCOUNTS ----------
 
 
@@ -148,8 +148,6 @@ def generate_accounts_report(data, output_file, hashed_email):
     story.append(Spacer(1, 12))
 
     accounts = _get(data, "preview/settings/accounts_list", [])
-    if not accounts:
-        accounts = _as_list(_get(data, "preview/settings/accounts"))
 
     rows = []
     for a in accounts:
@@ -159,8 +157,8 @@ def generate_accounts_report(data, output_file, hashed_email):
             [
                 a.get("Code", "N/A"),
                 a.get("Name", "N/A"),
-                a.get("Class", "N/A"),  # keep
-                a.get("TaxType", "N/A"),  # keep
+                a.get("Class", "N/A"),
+                a.get("TaxType", "N/A"),
             ]
         )
     add_table(
@@ -172,10 +170,8 @@ def generate_accounts_report(data, output_file, hashed_email):
         styles,
     )
 
-    # Tax Rates (unchanged)
+    # Tax Rates
     tax_rates = _get(data, "preview/settings/tax_rates_list", [])
-    if not tax_rates:
-        tax_rates = _as_list(_get(data, "preview/settings/tax_rates"))
     tr_rows = []
     for t in tax_rates:
         if not t:
@@ -197,10 +193,8 @@ def generate_accounts_report(data, output_file, hashed_email):
         styles,
     )
 
-    # Tracking Categories (unchanged)
+    # Tracking Categories
     trk = _get(data, "preview/settings/tracking_categories_list", [])
-    if not trk:
-        trk = _as_list(_get(data, "preview/settings/tracking_categories"))
     tc_rows = []
     for tc in trk:
         if not tc:
@@ -237,16 +231,13 @@ def generate_transactions_report(data, output_file, hashed_email):
     story.append(Spacer(1, 12))
 
     txns = _get(data, "preview/transactions/bank_transactions_list", [])
-    if not txns:
-        txns = _as_list(_get(data, "preview/transactions/bank_transactions"))
 
     rows = []
     for t in txns:
         if not t:
             continue
-        desc = t.get("Reference") or _get(
-            t, "Contact/Name", "N/A"
-        )  # no truncation; allow wrap
+        # Xero BankTransaction has Reference field and Contact is nested
+        desc = t.get("Reference") or _get(t, "Contact/Name", "N/A")
         rows.append(
             [
                 safe_date(t.get("Date")),
@@ -262,7 +253,7 @@ def generate_transactions_report(data, output_file, hashed_email):
         "Bank Transactions – All",
         rows,
         ["Date", "Description", "Total", "Status", "CCY", "Reconciled"],
-        [70, 150, 70, 70, 45, 65],  # Description ~150
+        [70, 150, 70, 70, 45, 65],
         styles,
     )
 
@@ -304,8 +295,6 @@ def generate_payments_report(data, output_file, hashed_email):
     story.append(Spacer(1, 12))
 
     payments = _get(data, "preview/transactions/payments_list", [])
-    if not payments:
-        payments = _as_list(_get(data, "preview/transactions/payments"))
 
     rows = []
     for p in payments:
@@ -350,8 +339,6 @@ def generate_credit_notes_report(data, output_file, hashed_email):
     story.append(Spacer(1, 12))
 
     credit_notes = _get(data, "preview/transactions/credit_notes_list", [])
-    if not credit_notes:
-        credit_notes = _as_list(_get(data, "preview/transactions/credit_notes"))
 
     rows = []
     for cn in credit_notes:
@@ -397,8 +384,6 @@ def generate_payroll_report(data, output_file, hashed_email):
     # Employees
     story.append(Paragraph("EMPLOYEES", styles["Heading2"]))
     employees = _get(data, "preview/payroll/employees_list", [])
-    if not employees:
-        employees = _as_list(_get(data, "preview/payroll/employees"))
     emp_rows = []
     for e in employees:
         if not e:
@@ -425,8 +410,6 @@ def generate_payroll_report(data, output_file, hashed_email):
     # Pay Runs
     story.append(Paragraph("PAY RUNS", styles["Heading2"]))
     payruns = _get(data, "preview/payroll/payruns_list", [])
-    if not payruns:
-        payruns = _as_list(_get(data, "preview/payroll/payruns"))
     pr_rows = []
     for pr in payruns:
         if not pr:
@@ -455,8 +438,6 @@ def generate_payroll_report(data, output_file, hashed_email):
     # Payslips
     story.append(Paragraph("PAYSLIPS", styles["Heading2"]))
     payslips = _get(data, "preview/payroll/payslips_list", [])
-    if not payslips:
-        payslips = _as_list(_get(data, "preview/payroll/payslips"))
     ps_rows = []
     for ps in payslips:
         if not ps:
@@ -502,8 +483,6 @@ def generate_invoices_report(data, output_file, hashed_email):
     story.append(Spacer(1, 12))
 
     invoices = _get(data, "preview/transactions/invoices_list", [])
-    if not invoices:
-        invoices = _as_list(_get(data, "preview/transactions/invoices"))
 
     inv_rows = []
     for inv in invoices:
@@ -512,7 +491,7 @@ def generate_invoices_report(data, output_file, hashed_email):
         inv_rows.append(
             [
                 safe_date(inv.get("Date")),
-                _get(inv, "Contact/Name", "Unknown"),  # let the cell wrap
+                _get(inv, "Contact/Name", "Unknown"),
                 inv.get("Status", "Unknown"),
                 money(inv.get("Total")),
                 money(inv.get("AmountPaid")),
@@ -533,7 +512,7 @@ def generate_invoices_report(data, output_file, hashed_email):
     return upload_pdf_to_s3(buffer, hashed_email, output_file)
 
 
-# ---------- 7) FINANCIAL REPORTS SUMMARY (shows all top-level rows) ----------
+# ---------- 7) FINANCIAL REPORTS SUMMARY ----------
 
 
 def generate_reports_summary(data, output_file, hashed_email):
@@ -561,7 +540,6 @@ def generate_reports_summary(data, output_file, hashed_email):
             Paragraph(f"Report Date: {rp.get('ReportDate', '')}", styles["BodyText"])
         )
         story.append(Spacer(1, 6))
-        # Flatten one level of sections into a table if possible
         rows = []
         for row in rp.get("Rows") or []:
             if row.get("RowType") == "Section":
@@ -630,8 +608,6 @@ def generate_bank_transfers_report(data, output_file, hashed_email):
     story.append(Spacer(1, 12))
 
     transfers = _get(data, "preview/transactions/bank_transfers_list", [])
-    if not transfers:
-        transfers = _as_list(_get(data, "preview/transactions/bank_transfers"))
 
     rows = []
     for bt in transfers:
