@@ -156,6 +156,7 @@ origins = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5000",
     "https://dukbillapp.com",
+    "https://dukbill.com"
 ]
 
 app.add_middleware(
@@ -1900,7 +1901,7 @@ async def send_verification_text(request: Request, user=Depends(get_current_user
         data.get("name"),
         data.get("country"),
         data.get("dob"),
-        "https://dukbillapp.com/dashboard",
+        "https://dukbill.com/dashboard",
         IDMERIT_CALLBACK_URL,
     )
 
@@ -2018,71 +2019,73 @@ async def callback_xero(
     Handle OAuth callback from Xero asynchronously,
     scheduling all processing as a background task.
     """
+    try:
+        decrypted_key = Encryption_function.decrypt(state)
+        jwt_key = decrypted_key.decode()
 
-    decrypted_key = Encryption_function.decrypt(state)
-    jwt_key = decrypted_key.decode()
+        claims = verify_token(jwt_key)
+        if not claims:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    claims = verify_token(jwt_key)
-    if not claims:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        auth0_id = claims["sub"]
+        user_obj = find_user(auth0_id)
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
+        hashed_email = hash_email(user_obj["email"])
 
-    auth0_id = claims["sub"]
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
-    hashed_email = hash_email(user_obj["email"])
-
-    # Exchange authorization code for tokens
-    token_response = requests.post(
-        TOKEN_URL,
-        headers={
-            "Authorization": f"Basic {get_basic_auth()}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": XERO_REDIRECT_URI,
-        },
-        timeout=10,
-    )
-
-    if token_response.status_code != 200:
-        raise HTTPException(400, f"Token exchange failed: {token_response.text}")
-
-    token_data = token_response.json()
-    tokens["access_token"] = token_data["access_token"]
-    tokens["refresh_token"] = token_data.get("refresh_token")
-    tokens["expires_at"] = int(time.time()) + int(token_data.get("expires_in", 1800))
-    tokens["scope"] = token_data.get("scope", "")
-
-    # Fetch connections
-    connections_response = requests.get(
-        "https://api.xero.com/connections",
-        headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        timeout=10,
-    )
-
-    if connections_response.status_code != 200:
-        raise HTTPException(
-            400, f"Failed to get connections: {connections_response.text}"
+        # Exchange authorization code for tokens
+        token_response = requests.post(
+            TOKEN_URL,
+            headers={
+                "Authorization": f"Basic {get_basic_auth()}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": XERO_REDIRECT_URI,
+            },
+            timeout=10,
         )
 
-    connections = connections_response.json()
-    if not connections:
-        return RedirectResponse(url=REDIRECT_URL, status_code=303)
+        if token_response.status_code != 200:
+            raise HTTPException(400, f"Token exchange failed: {token_response.text}")
 
-    tenant_id = connections[0]["tenantId"]
-    org_name = connections[0]["tenantName"]
+        token_data = token_response.json()
+        tokens["access_token"] = token_data["access_token"]
+        tokens["refresh_token"] = token_data.get("refresh_token")
+        tokens["expires_at"] = int(time.time()) + int(token_data.get("expires_in", 1800))
+        tokens["scope"] = token_data.get("scope", "")
 
-    # --- Schedule background job ---
-    background_tasks.add_task(
-        perform_xero_background_tasks,
-        tenant_id,
-        org_name,
-        hashed_email
-    )
-    print("redirect user now")
+        # Fetch connections
+        connections_response = requests.get(
+            "https://api.xero.com/connections",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            timeout=10,
+        )
+
+        if connections_response.status_code != 200:
+            raise HTTPException(
+                400, f"Failed to get connections: {connections_response.text}"
+            )
+
+        connections = connections_response.json()
+        if not connections:
+            return RedirectResponse(url=REDIRECT_URL, status_code=303)
+
+        tenant_id = connections[0]["tenantId"]
+        org_name = connections[0]["tenantName"]
+
+        # --- Schedule background job ---
+        background_tasks.add_task(
+            perform_xero_background_tasks,
+            tenant_id,
+            org_name,
+            hashed_email
+        )
+        print("redirect user now")
+    except Exception:
+        pass
     # Finish OAuth callback immediately
     return RedirectResponse(url=REDIRECT_URL, status_code=303)
 
@@ -2141,37 +2144,40 @@ async def get_xero_connections(user=Depends(get_current_user)) -> dict:
     Returns:
         dict: List of Xero connections {connections: [...]}
     """
-    claims, _ = user
-    auth0_id = claims["sub"]
+    try:
+        claims, _ = user
+        auth0_id = claims["sub"]
+        # Get user and client info
+        user_obj = find_user(auth0_id)
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    # Get user and client info
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
+        client = find_client(user_obj["user_id"])
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
 
-    client = find_client(user_obj["user_id"])
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+        # Check if user has Xero tokens
+        if not tokens.get("access_token"):
+            raise HTTPException(
+                status_code=400, detail="No Xero access token available. Connect first."
+            )
 
-    # Check if user has Xero tokens
-    if not tokens.get("access_token"):
-        raise HTTPException(
-            status_code=400, detail="No Xero access token available. Connect first."
+        # Fetch connections from Xero
+        response = requests.get(
+            "https://api.xero.com/connections",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            timeout=10,
         )
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to fetch Xero connections",
+            )
+        connections = response.json()
 
-    # Fetch connections from Xero
-    response = requests.get(
-        "https://api.xero.com/connections",
-        headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        timeout=10,
-    )
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Failed to fetch Xero connections: {response.text}",
-        )
-    connections = response.json()
+    except Exception as e:
+        return {"error": str(e)}
+        
     return {"connections": connections}
 
 
@@ -2188,36 +2194,39 @@ async def delete_xero_connection(
     Returns:
         dict: Success message on successful deletion
     """
-    claims, _ = user
-    auth0_id = claims["sub"]
+    try:
+        claims, _ = user
+        auth0_id = claims["sub"]
 
-    # Get user and client info
-    user_obj = find_user(auth0_id)
-    if not user_obj:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Get user and client info
+        user_obj = find_user(auth0_id)
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    client = find_client(user_obj["user_id"])
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+        client = find_client(user_obj["user_id"])
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
 
-    # Check if user has Xero access token
-    if not tokens.get("access_token"):
-        raise HTTPException(
-            status_code=400, detail="No Xero access token available. Connect first."
+        # Check if user has Xero access token
+        if not tokens.get("access_token"):
+            raise HTTPException(
+                status_code=400, detail="No Xero access token available. Connect first."
+            )
+
+        # Make request to Xero API to disconnect the connection
+        response = requests.delete(
+            f"https://api.xero.com/connections/{connection_id}",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            timeout=10,
         )
 
-    # Make request to Xero API to disconnect the connection
-    response = requests.delete(
-        f"https://api.xero.com/connections/{connection_id}",
-        headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        timeout=10,
-    )
-
-    if response.status_code not in [200, 204]:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Failed to delete Xero connection: {response.text}",
-        )
+        if response.status_code not in [200, 204]:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to delete Xero connection",
+            )
+    except Exception as e:
+        return {"error": str(e)}
 
     return {"status": "success", "message": f"Xero connection {connection_id} deleted"}
 

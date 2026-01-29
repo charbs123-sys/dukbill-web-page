@@ -15,7 +15,7 @@ def dukbill_style_html(
     broker_email: str,
     client_first_name: str,
     msg_contents: str,
-    cta_url: str | None = "https://dukbillapp.com/signup",
+    cta_url: str | None = "https://dukbill.com/signup",
     headline: str | None = None,  # optional override for the header line
     today_str: str | None = None,  # for testing/preview override
 ) -> str:
@@ -164,7 +164,7 @@ def send_broker_to_client(
             broker_email=broker_email,
             client_first_name=client_first_name,
             msg_contents=msg_contents,
-            cta_url=cta_url or "https://dukbillapp.com/signup",
+            cta_url=cta_url or "https://dukbill.com/signup",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
     elif msg_type == "verification_success":
@@ -172,7 +172,7 @@ def send_broker_to_client(
         html = dukbill_verification_success_html(
             broker_name=broker_name,
             client_first_name=client_first_name,
-            cta_url=cta_url or "https://dukbillapp.com/dashboard",
+            cta_url=cta_url or "https://dukbill.com/dashboard",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
     msg.add_alternative(html, subtype="html")
@@ -191,7 +191,7 @@ def send_broker_to_client(
 def dukbill_verification_success_html(
     broker_name: str,
     client_first_name: str,
-    cta_url: str = "https://dukbillapp.com/dashboard",
+    cta_url: str = "https://dukbill.com/dashboard",
     today_str: str | None = None,
 ) -> str:
     """
@@ -305,7 +305,7 @@ def dukbill_style_html_accountant(
     broker_email: str,
     client_first_name: str,
     msg_contents: str,
-    cta_url: str | None = "https://dukbillapp.com/",
+    cta_url: str | None = "https://dukbill.com/",
     headline: str | None = None,  # optional override for the header line
     today_str: str | None = None,  # for testing/preview override
 ) -> str:
@@ -435,7 +435,7 @@ def dukbill_style_html_accountant(
 def send_dukbill_to_accountant(
     accountant_name: str,
     accountant_email: str,
-    cta_url: str | None = "https://dukbillapp.com/dashboard",
+    cta_url: str | None = "https://dukbill.com/dashboard",
 ) -> bool:
     """
     Sends a Dukbill-styled reminder email to an accountant notifying them
@@ -480,7 +480,7 @@ def send_dukbill_to_accountant(
     # HTML version (consistent with Dukbill styling)
     html = dukbill_style_html(
         broker_name="Dukbill",
-        broker_email="support@dukbillapp.com",
+        broker_email="noreply@dukbill.com",
         client_first_name=accountant_name,
         msg_contents=msg_contents,
         cta_url=cta_url,
@@ -537,7 +537,7 @@ def send_client_to_accountant(
             broker_email=accountant_email,
             client_first_name=client_first_name,
             msg_contents=msg_contents,
-            cta_url=cta_url or "https://dukbillapp.com",
+            cta_url=cta_url or "https://dukbill.com",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
     elif msg_type == "verification_success":
@@ -545,7 +545,7 @@ def send_client_to_accountant(
         html = dukbill_verification_success_html(
             broker_name=accountant_name,
             client_first_name=client_first_name,
-            cta_url=cta_url or "https://dukbillapp.com/dashboard",
+            cta_url=cta_url or "https://dukbill.com/dashboard",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
     elif msg_type == "accountant_onboarding":
@@ -555,7 +555,7 @@ def send_client_to_accountant(
             broker_email=accountant_email,
             client_first_name=client_first_name,
             msg_contents=msg_contents,
-            cta_url=cta_url or "https://dukbillapp.com/signup",
+            cta_url=cta_url or "https://dukbill.com/signup",
             headline="Welcome to Dukbill as an Accountant!",
             today_str=date.today().strftime("%Y-%m-%d"),
         )
