@@ -560,6 +560,7 @@ async def get_category_documents(
     # (doesn't start with known prefixes)
     if not category.startswith(("Broker_", "idmerit_", "accountant")):
         # Try to get Xero documents for this organization
+        print(category)
         xero_docs = get_docs_xero(client["client_id"], [user_obj["email"]], category)
         documents.extend(xero_docs)
     else:
@@ -623,7 +624,7 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
     thread_id = request.get("threadid")
     # determine which type of document to remove comment from
     if "xero" in category.lower():
-        file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("xero_") else thread_id
+        file_name = thread_id
         remove_comment_docs_xero(
             client["client_id"], hashed_user_email, file_name, "xero_reports"
         )
@@ -1194,8 +1195,9 @@ async def add_document_comment(
     hashed_user_email = request.get("hashed_email")
     thread_id = request.get("threadid", None)
     
+
     if "xero" in category.lower():
-        file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("xero_") else thread_id
+        file_name = thread_id
         add_comment_docs_xero(
             client_id,
             hashed_user_email,
@@ -1273,7 +1275,7 @@ async def remove_document_comment(
     thread_id = request.get("threadid", None)
 
     if "xero" in category.lower():
-        file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("xero_") else thread_id
+        file_name = thread_id
         remove_comment_docs_xero(
             client_id, hashed_user_email, file_name, "xero_reports"
         )
@@ -2158,7 +2160,10 @@ def perform_xero_background_tasks(
         try:
             REPORT_ORG = []
             for report in EXPECTED_REPORTS_XERO:
-                REPORT_ORG.append(str(org_name) + report)
+                safe_org_name = "".join(
+                    c for c in org_name if c.isalnum() or c in (' ', '_')
+                ).replace(" ", "_") + "_"
+                REPORT_ORG.append(str(safe_org_name) + report)
             update_anonymized_json_xero(
                 hashed_email,
                 "xero_reports",
