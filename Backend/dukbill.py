@@ -563,8 +563,7 @@ async def get_category_documents(
     
     # Check if this is a Xero organization category
     # (doesn't start with known prefixes)
-    if not category.startswith(("Broker_", "idmerit_", "accountant")):
-        # Try to get Xero documents for this organization
+    if "xero" in category.lower():        # Try to get Xero documents for this organization
         xero_docs = get_docs_xero(client["client_id"], [user_obj["email"]], category)
         documents.extend(xero_docs)
     elif category.startswith("Broker_"):
@@ -1042,7 +1041,7 @@ async def get_category_documents_broker(
     documents = get_client_category_documents(client_id, emails, category)
 
     # retrieving xero/myob documents
-    if not category.startswith(("Broker_", "idmerit_", "accountant")):
+    if "xero" in category.lower():
         # Try to get Xero documents for this organization
         xero_docs = get_docs_xero(client["client_id"], [client_user["email"]], category)
         documents.extend(xero_docs)
