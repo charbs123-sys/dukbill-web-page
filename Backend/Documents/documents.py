@@ -319,6 +319,7 @@ def get_docs_accountant(client_id: str, hashed_client_email: str, category: str,
                 "category_data": doc.get("category_data"),
                 "url": urls,
                 "hashed_email": hashed_client_email,
+                "broker_comment": doc.get("broker_comment", ""),
             }
         )
 
