@@ -1953,9 +1953,19 @@ async def idmerit_callback(request: Request):
             response_data.get("documentType"),
         )
 
-        update_anonymized_json_general(
-            hashed_email, "idmerit_docs", EXPECTED_REPORTS_IDMERIT
-        )
+        if response_data.get("documentType") == "passport":
+            update_anonymized_json_general(
+                hashed_email, "idmerit_docs", ["idmerit_passport.pdf"]
+            )
+        else:
+            if response_data.get("scanImage"):
+                update_anonymized_json_general(
+                hashed_email, "idmerit_docs", ["idmerit_front_id.pdf"]
+                )
+            if response_data.get("scanImageBack"):
+                update_anonymized_json_general(
+                hashed_email, "idmerit_docs", ["idmerit_back_id.pdf"]
+                )
 
         return {"status": "User verified successfully"}
 
