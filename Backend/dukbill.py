@@ -52,6 +52,11 @@ from Documents.documents import (
     delete_docs_xero,
     add_comment_docs_xero,
     remove_comment_docs_xero,
+    update_anonymized_json_myob,
+    get_docs_myob,
+    delete_docs_myob,
+    add_comment_docs_myob,
+    remove_comment_docs_myob
 )
 from Database.db_utils import (
     search_user_by_auth0,
@@ -560,9 +565,12 @@ async def get_category_documents(
     # (doesn't start with known prefixes)
     if not category.startswith(("Broker_", "idmerit_", "accountant")):
         # Try to get Xero documents for this organization
-        print(category)
         xero_docs = get_docs_xero(client["client_id"], [user_obj["email"]], category)
         documents.extend(xero_docs)
+    elif category.startswith("Broker_"):
+        documents.extend(
+            get_docs_myob(client["client_id"], [user_obj["email"]], category)
+        )
     else:
         # Regular MYOB/IDMerit documents
         documents.extend(
@@ -628,9 +636,10 @@ async def remove_client_document_comment(request: dict, user=Depends(get_current
         remove_comment_docs_xero(
             client["client_id"], hashed_user_email, file_name, "xero_reports"
         )
-    elif category.startswith("Broker_"):
-        remove_comment_docs_general(
-            client["client_id"], hashed_user_email, category, "myob_reports"
+    elif category.startswith("Broker_") or "myob" in category.lower():
+        file_name = thread_id
+        remove_comment_docs_myob(
+            client["client_id"], hashed_user_email, file_name, "myob_reports"
         )
     elif category.startswith("idmerit_"):
         remove_comment_docs_general(
@@ -1037,6 +1046,8 @@ async def get_category_documents_broker(
         # Try to get Xero documents for this organization
         xero_docs = get_docs_xero(client["client_id"], [client_user["email"]], category)
         documents.extend(xero_docs)
+    elif category.startswith("Broker_"):
+        documents.extend(get_docs_myob(client["client_id"], [client_user["email"]], category))
     else:
         # Regular MYOB/IDMerit documents
         documents.extend(
@@ -1194,7 +1205,6 @@ async def add_document_comment(
     category = request.get("category")
     hashed_user_email = request.get("hashed_email")
     thread_id = request.get("threadid", None)
-    
 
     if "xero" in category.lower():
         file_name = thread_id
@@ -1206,8 +1216,8 @@ async def add_document_comment(
             "xero_reports",
         )
     elif any(x in category.lower() for x in ["myob", "broker"]):
-        file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("Broker_") else thread_id
-        add_comment_docs_general(
+        file_name = thread_id
+        add_comment_docs_myob(
             client_id,
             hashed_user_email,
             file_name,
@@ -1280,8 +1290,8 @@ async def remove_document_comment(
             client_id, hashed_user_email, file_name, "xero_reports"
         )
     elif any(x in category.lower() for x in ["myob", "broker"]):
-        file_name = thread_id.split("_", 1)[1] if not thread_id.startswith("Broker_") else thread_id
-        remove_comment_docs_general(
+        file_name = thread_id
+        remove_comment_docs_myob(
             client_id, hashed_user_email, file_name, "myob_reports"
         )
     elif "identity" in category.lower():
@@ -1677,7 +1687,7 @@ async def delete_client_document_endpoint(
         delete_docs_xero(threadid, hashed_email)  # Removed third parameter
     # Check if it's a MYOB report
     elif "Broker_" in threadid:
-        delete_docs_general(threadid, hashed_email, "myob_reports")
+        delete_docs_myob(threadid, hashed_email)
     else:
         delete_client_document(hashed_email, threadid)
 
@@ -2336,11 +2346,12 @@ async def myob_callback_compilation(
 
     hashed_user_email = hash_email(user_obj["email"])
 
+    
     background_tasks.add_task(
         process_myob_data, code, business_id, state, hashed_user_email
     )
 
-    update_anonymized_json_general(
+    update_anonymized_json_myob(
         hashed_user_email, "myob_reports", EXPECTED_REPORTS_MYOB
     )
 

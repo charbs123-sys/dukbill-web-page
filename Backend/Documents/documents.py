@@ -95,34 +95,8 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
                 )
                 break
 
-        # # Process Xero reports by organization
-        # for org_name, reports in doc.items():
-        #     # Skip non-Xero keys
-        #     if not isinstance(reports, dict) or org_name in [
-        #         "broker_document_category", "category_data", "hashed_email",
-        #         "broker_comment", "threadid", "myob_reports", "idmerit_docs"
-        #     ]:
-        #         continue
-            
-        #     # Check if this looks like a Xero organization (has report PDFs)
-        #     if any("xero" in str(key).lower() for key in reports.keys()):
-        #         safe_org_name = "".join(
-        #             c for c in org_name if c.isalnum() or c in (' ', '_')
-        #         ).replace(" ", "_") + "_"
-        #         for filename, broker_comment in reports.items():
-        #             report_filename = filename.replace(org_name, safe_org_name)
-        #             xero_map.setdefault(org_name, []).append(
-        #                 {
-        #                     "id": report_filename,
-        #                     "category_data": [],
-        #                     "hashed_email": doc.get("hashed_email"),
-        #                     "broker_comment": broker_comment,
-        #                 }
-        #             )
-
-
         # [{"GNN_and_Co_Pty_Ltd_xero_accounts_report.pdf": {"id": "", "broker_comment": "", category_data: {}, "hashed_email": ""}}]
-        xero_reports = doc.get("xero_reports", [])
+        xero_reports = doc.get("xero_reports", {})
 
         for org_name, reports_dict in xero_reports.items():
             for filename, broker_comment in reports_dict.items():
@@ -135,13 +109,15 @@ def get_client_dashboard(client_id: str, emails: list) -> list:
                     }
                 )
 
-        for myob_report in doc.get("myob_reports", []):
-            myob_map.setdefault(myob_report.get("filename", ""), []).append(
+
+        myob_reports = doc.get("myob_reports", {})
+        for filename, broker_comment in myob_reports.items():
+            myob_map.setdefault(filename, []).append(
                 {
-                    "id": myob_report.get("filename", ""),
+                    "id": filename,
                     "category_data": [],
                     "hashed_email": doc.get("hashed_email"),
-                    "broker_comment": myob_report.get("broker_comment", ""),
+                    "broker_comment": broker_comment,
                 }
             )
 
@@ -386,6 +362,112 @@ def update_anonymized_json_general(
     save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
     return True
 
+
+
+def update_anonymized_json_myob(
+    hashed_email: str, parent_header: str, sibling_header: list[str]
+) -> bool:
+    """
+    updating anonymized json for myob and xero
+
+    hashed_email (str): The hashed email identifier
+    parent_header (str): The parent header in the JSON structure (e.g., "xero_reports", "myob_reports")
+    sibling_header (list[str]): List of sibling filenames to add under the parent header
+
+    Returns:
+        bool    
+    """
+    ensure_json_file_exists(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    documents = get_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json")
+    
+    for doc in documents:
+        if parent_header in doc:
+            # Replace existing data
+            doc[parent_header] = {filename: "" for filename in sibling_header}
+            save_json_file(
+                hashed_email, "/broker_anonymized/emails_anonymized.json", documents
+            )
+            return True
+    
+    # If parent_header doesn't exist, create new entry
+    documents.append(
+        {parent_header: {filename: "" for filename in sibling_header}}
+    )
+    save_json_file(hashed_email, "/broker_anonymized/emails_anonymized.json", documents)
+    return True
+
+
+def get_docs_myob(client_id: str, emails: list, filename: str) -> list:
+    """
+    Get MYOB documents for a specific filename.
+    
+    Args:
+        client_id: The client identifier
+        emails: List of email addresses
+        filename: The specific report filename (e.g., "Broker_Payroll_Summary.pdf")
+    
+    Returns:
+        list: List of document dictionaries
+    """
+    if not verify_client_by_id(client_id):
+        raise HTTPException(status_code=403, detail="Invalid client")
+
+    docs = []
+    hashed_email = hash_email(emails[0])
+    
+    try:
+        documents = get_json_file(
+            hashed_email, "/broker_anonymized/emails_anonymized.json"
+        )
+    except Exception as e:
+        logging.error(f"Error reading JSON for {hashed_email}: {e}")
+        return []
+
+    for doc in documents:
+        myob_reports = doc.get("myob_reports", {})
+        
+        if filename in myob_reports:
+            broker_comment = myob_reports[filename]
+            
+            try:
+                s3_key = f"{hashed_email}/myob_reports/{filename}"
+                url = get_cloudfront_url(s3_key)
+            except Exception as e:
+                logging.error(f"Error generating URL for {s3_key}: {e}")
+                continue
+
+            # Extract report type from filename
+            # "Broker_Payroll_Summary.pdf" -> "Payroll Summary"
+            base_name = filename.replace(".pdf", "")
+            if base_name.startswith("Broker_"):
+                report_type = base_name.replace("Broker_", "").replace("_", " ").title()
+            else:
+                report_type = base_name.replace("_", " ").title()
+
+            docs.append(
+                {
+                    "id": filename,
+                    "category": "MYOB Reports",
+                    "category_data": {
+                        "report_type": report_type
+                    },
+                    "url": [url],
+                    "hashed_email": hashed_email,
+                    "broker_comment": broker_comment,
+                }
+            )
+            break  # Found the file, no need to continue
+
+    return docs
+
+
+
+#
+# Xero document handling
+#
+
+
+
 def update_anonymized_json_xero(
     hashed_email: str,
     parent_header: str,
@@ -498,60 +580,6 @@ def get_docs_xero(client_id: str, emails: list, category: str) -> list:
                 "broker_comment": broker_comment,
             }
         )
-
-    return docs
-
-    # Find the organization and its reports
-    org_reports = None
-    for doc in documents:
-        if category in doc and isinstance(doc[category], dict):
-            # Check if this is a Xero organization
-            if any("xero" in str(key).lower() for key in doc[category].keys()):
-                org_reports = doc[category]
-                break
-    
-    if not org_reports:
-        return []
-
-    # Process each report file for this organization
-    for filename, broker_comment in org_reports.items():
-        try:
-            # Construct S3 key
-            safe_org_name = "".join(
-                c for c in category if c.isalnum() or c in (' ', '_')
-            ).replace(" ", "_") + "_"
-
-            report_filename = filename.replace(category, safe_org_name)
-            s3_key = f"{hashed_email}/xero_reports/{report_filename}"
-            # Check if file exists in S3
-            try:
-                s3.head_object(Bucket=bucket_name, Key=s3_key)
-                url = get_cloudfront_url(s3_key)
-                
-                # Extract report type from filename
-                # e.g., "Demo Company (AU)xero_accounts_report.pdf" -> "Accounts Report"
-                report_type = filename.replace(category, "").replace("xero_", "").replace(".pdf", "").replace("_", " ").title()
-                
-                docs.append(
-                    {
-                        "id": f"{hashed_email}_{report_filename}",
-                        "category": "Xero Reports",
-                        "category_data": {
-                            "organization": category,
-                            "report_type": report_type
-                        },
-                        "url": [url],
-                        "hashed_email": hashed_email,
-                        "broker_comment": broker_comment,
-                    }
-                )
-            except:
-                # File doesn't exist in S3, skip
-                continue
-                
-        except Exception as e:
-            logging.error(f"Error processing Xero file {filename} for {hashed_email}: {e}")
-            continue
 
     return docs
 
@@ -1020,6 +1048,52 @@ def add_comment_docs_xero(
         logging.error(f"Error adding comment to Xero document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def add_comment_docs_myob(
+    client_id: str, hashed_email: str, file_name: str, comment: str, parent_header: str
+) -> None:
+    """
+    Adds a broker comment to a Xero document in the anonymized JSON.
+
+    client_id (str): The client identifier
+    hashed_email (str): The hashed email identifier
+    file_name (str): The sanitized filename (e.g., "GNN_and_Co_Pty_Ltd_xero_financial_reports.pdf")
+    comment (str): The comment to add
+    parent_header (str): The parent header in the JSON structure (e.g., "xero_reports")
+
+    Returns:
+        None
+    """
+    try:
+        if not verify_client_by_id(client_id):
+            raise HTTPException(status_code=403, detail="Invalid client")
+
+        documents = get_json_file(
+            hashed_email, "/broker_anonymized/emails_anonymized.json"
+        )
+        updated = False
+
+        for doc in documents:
+            myob_reports = doc.get("myob_reports", {})
+            if file_name in myob_reports:
+                myob_reports[file_name] = comment
+                updated = True
+                logging.info(f"✓ Updated comment for {file_name}")
+                break
+
+        if not updated:
+            raise HTTPException(
+                status_code=404, detail=f"File {file_name} not found"
+            )
+
+        save_json_file(
+            hashed_email, "/broker_anonymized/emails_anonymized.json", documents
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error adding comment to Xero document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def add_comment_client_document(
@@ -1145,6 +1219,53 @@ def remove_comment_docs_xero(
         raise
     except Exception as e:
         logging.error(f"Error removing comment from Xero document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def remove_comment_docs_myob(
+    client_id: str, hashed_email: str, filename: str, parent_header: str
+) -> None:
+    """
+    Removes a broker comment from a Xero document in the anonymized JSON.
+
+    client_id (str): The client identifier
+    hashed_email (str): The hashed email identifier
+    category (str): The sanitized filename (e.g., "GNN_and_Co_Pty_Ltd_xero_financial_reports.pdf")
+    parent_header (str): The parent header in the JSON structure (e.g., "xero_reports")
+
+    Returns:
+        None
+    """
+    try:
+        if not verify_client_by_id(client_id):
+            raise HTTPException(status_code=403, detail="Invalid client")
+
+        documents = get_json_file(
+            hashed_email, "/broker_anonymized/emails_anonymized.json"
+        )
+        updated = False
+
+        for doc in documents:
+            myob_reports = doc.get("myob_reports", {})
+            if filename in myob_reports:
+                myob_reports[filename] = ""
+                updated = True
+                logging.info(f"✓ Removed comment for {filename}")
+                break
+
+        if not updated:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document '{filename}' not found"
+            )
+
+        save_json_file(
+            hashed_email, "/broker_anonymized/emails_anonymized.json", documents
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error removing comment from MYOB document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def remove_comment_client_document(
@@ -1428,7 +1549,52 @@ def delete_docs_xero(report_name: str, hashed_email: str):
         logging.error(f"Error deleting Xero document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def delete_docs_myob(report_name: str, hashed_email: str):
+    """
+    Delete a Xero document from S3 and emails_anonymized.json.
 
+    report_name (str): The sanitized filename (e.g., "GNN_and_Co_Pty_Ltd_xero_accounts_report.pdf")
+    hashed_email (str): The hashed email identifier
+
+    Returns:
+        None
+    """
+    try:
+        # Construct the S3 key
+        anonymized_key = "/broker_anonymized/emails_anonymized.json"
+        report_key = f"{hashed_email}/myob_reports/{report_name}"
+        
+        # Delete the file from S3
+        try:
+            s3.delete_object(Bucket=bucket_name, Key=report_key)
+            logging.info(f"✓ Deleted {report_key}")
+        except Exception as e:
+            logging.error(f"Could not delete {report_key}: {e}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to delete document: {e}"
+            )
+
+        # Delete from anonymized json
+        documents = get_json_file(hashed_email, anonymized_key)
+        modified = False
+        
+        for doc in documents:
+            myob_reports = doc.get("myob_reports", {})
+            if report_name in myob_reports:
+                del myob_reports[report_name]
+                logging.info(f"✓ Removed {report_name}")
+                modified = True
+                break
+
+        if modified:
+            # Save the updated JSON back to S3
+            save_json_file(hashed_email, anonymized_key, documents)
+        else:
+            logging.warning(f"Report {report_name} not found in JSON")
+            
+    except Exception as e:
+        logging.error(f"Error deleting MYOB document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ------------------------
 # Move Documents
